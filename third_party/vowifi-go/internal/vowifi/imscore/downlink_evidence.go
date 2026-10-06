@@ -64,8 +64,13 @@ func (s *Service) recordCurrentDownlinkRequest(peer net.Conn, checkpoint downlin
 	s.mu.Lock()
 	current := !s.stopped() && checkpoint.samePath(s.downlinkCheckpointLocked()) && s.currentDownlinkPeerLocked(peer)
 	timeoutProven := false
+	registrationProven := false
 	if current {
 		s.downlinkRequests++
+		if peer != nil && peer == s.registrationTCP && s.registrationTCPProtected {
+			registrationProven = !s.registrationDownlinkReadyLocked()
+			s.registrationDownlink = registrationDownlinkEvidence{conn: peer, checkpoint: checkpoint}
+		}
 		if _, datagram := peer.(*protectedUDPPeer); datagram {
 			s.udpDownlinkProven.Store(true)
 			s.portSRecoveryAwaitingFlow.Store(false)
@@ -90,7 +95,7 @@ func (s *Service) recordCurrentDownlinkRequest(peer net.Conn, checkpoint downlin
 	}
 	s.confirmCurrentRegistrarDownlinkHealthy()
 	s.signalDownlinkValidation()
-	if _, datagram := peer.(*protectedUDPPeer); datagram {
+	if _, datagram := peer.(*protectedUDPPeer); (datagram || registrationProven) && !timeoutProven {
 		s.notifySMSReadiness()
 	}
 }

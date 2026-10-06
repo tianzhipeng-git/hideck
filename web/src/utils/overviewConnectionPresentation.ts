@@ -1,3 +1,4 @@
+import { smsDownlinkPending } from './smsReadiness'
 import { t } from '../i18n'
 import type { DeviceOverviewItem } from '../types/api'
 import {
@@ -140,6 +141,10 @@ function createVoWiFiOrCellularPresentation(
     tone = 'is-ready'
     title = t('overview.vowifiConnected')
     detail = t('overview.vowifiConnectedHint')
+  } else if (device.vowifi_active && coreStagesReady && smsDownlinkPending(runtime)) {
+    tone = 'is-pending'
+    title = t('overview.vowifiConnected')
+    detail = 'IMS 已注册，短信接收待验证'
   } else if (device.vowifi_active && coreStagesReady && hasFailedSMSStage) {
     tone = 'is-pending'
     title = t('overview.vowifiConnected')

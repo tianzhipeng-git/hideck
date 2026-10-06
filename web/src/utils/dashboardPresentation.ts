@@ -1,3 +1,4 @@
+import { smsDownlinkPending } from './smsReadiness'
 import { t } from '../i18n'
 import type { DashboardDevice, NativeVoLTEStatus, VoWiFiRuntimeState } from '../types/api'
 import { isNativeVoLTEMode } from './phoneMode'
@@ -85,7 +86,7 @@ export function createDashboardStages(
     Object.freeze({ key: 'Tunnel', ready: runtime?.tunnel_ready }),
     Object.freeze({ key: 'IMS', ready: runtime?.ims_ready }),
     Object.freeze({ key: 'SMS TX', ready: smsSendReady }),
-    Object.freeze({ key: 'SMS RX', ready: runtime?.sms_ready })
+    Object.freeze({ key: 'SMS RX', ready: smsDownlinkPending(runtime) ? undefined : runtime?.sms_ready })
   ])
 }
 

@@ -82,3 +82,11 @@ test('shows an explicit startup failure before the first IMS registration', () =
     kind: 'failed', state: 'unavailable', at: '2026-09-04T10:00:00Z'
   }), '启动失败')
 })
+
+test('unverified downlink is distinguished from a failed connection', () => {
+  const pending = health({ state: 'recovering', active: true,
+    last_reason: 'IMS SMS downlink is awaiting verification' })
+  assert.equal(wifiCallingHealthLabel(pending), '接收待验证')
+  assert.match(wifiCallingHealthDetail(pending), /等待验证/)
+  assert.equal(wifiCallingHealthLabel(health({ state: 'recovering', last_reason: 'swu_session_down' })), '正在恢复')
+})

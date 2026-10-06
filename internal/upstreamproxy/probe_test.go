@@ -196,11 +196,13 @@ func startProbeServerOn(t *testing.T, network, addr string, handler func(net.Con
 	t.Cleanup(func() { _ = ln.Close() })
 
 	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go handler(conn)
 		}
-		handler(conn)
 	}()
 
 	return ln.Addr().String()

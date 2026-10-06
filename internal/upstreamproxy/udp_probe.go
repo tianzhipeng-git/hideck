@@ -80,13 +80,9 @@ func probeUDPRelay(
 	ctx context.Context,
 	conn *net.UDPConn,
 	relay *net.UDPAddr,
-	targets []string,
+	requests []udpProbeRequest,
 	deadline time.Time,
 ) (string, error) {
-	requests, err := prepareUDPProbeRequests(ctx, targets)
-	if err != nil {
-		return "", err
-	}
 	if err := conn.SetDeadline(deadline); err != nil {
 		return "", fmt.Errorf("设置 UDP 数据探测超时失败: %w", err)
 	}

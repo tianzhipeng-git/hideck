@@ -209,6 +209,7 @@ type Service struct {
 	downlinkValidationWake    chan struct{}
 	downlinkGeneration        uint64
 	downlinkRequests          uint64
+	registrationDownlink      registrationDownlinkEvidence
 	registerDownlinkBaseline  downlinkCheckpoint
 	replacementDownlinkWatch  *replacementDownlinkWatch
 	networkDone               sync.WaitGroup

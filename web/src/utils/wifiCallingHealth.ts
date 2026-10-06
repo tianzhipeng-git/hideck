@@ -1,3 +1,4 @@
+import { SMS_DOWNLINK_PENDING } from './smsReadiness'
 import type {
   WiFiCallingHealthEvent,
   WiFiCallingHealthSnapshot,
@@ -35,6 +36,7 @@ export function wifiCallingHealthTone(state?: WiFiCallingHealthState): WiFiCalli
 
 export function wifiCallingHealthLabel(health?: WiFiCallingHealthSnapshot): string {
   if (!health) return '暂无监测数据'
+  if (health.state === 'recovering' && health.last_reason === SMS_DOWNLINK_PENDING) return '接收待验证'
   return wifiCallingHealthStateLabel(health.state)
 }
 
@@ -46,6 +48,7 @@ export function wifiCallingHealthStateLabel(state?: WiFiCallingHealthState): str
 export function wifiCallingHealthDetail(health?: WiFiCallingHealthSnapshot): string {
   if (!health) return '本次服务启动后尚无 WiFi Calling 运行记录'
   if (!health.measured && health.state === 'unavailable') return health.last_reason || 'WiFi Calling 启动失败'
+  if (health.active && health.state === 'recovering' && health.last_reason === SMS_DOWNLINK_PENDING) return 'IMS 已注册，等待验证当前连接的短信下行能力'
   if (!health.active) return health.last_reason ? `关闭原因：${health.last_reason}` : '当前会话已结束'
   if (!health.measured) return '首次 IMS 注册成功后开始统计可用率'
   if (health.state === 'healthy') return `已稳定 ${formatHealthDuration(health.stable_seconds)}`

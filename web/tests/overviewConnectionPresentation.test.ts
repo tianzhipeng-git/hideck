@@ -135,3 +135,17 @@ test('cellular with software phone off does not claim wifi calling', () => {
   assert.equal(presentation.title, '软件电话未开启')
   assert.match(presentation.detail, /蜂窝驻网/)
 })
+
+test('unverified SMS downlink is pending rather than failed', () => {
+  const result = createOverviewConnectionPresentation(device({
+    vowifi_enabled: true, vowifi_active: true,
+    vowifi_runtime: {
+      sim_ready: true, access_ready: true, tunnel_ready: true, ims_ready: true,
+      sms_mo_ready: true, sms_ready: false,
+      sms_ready_reason: 'IMS SMS downlink is awaiting verification'
+    }
+  }))
+  assert.equal(result.tone, 'is-pending')
+  assert.equal(result.detail, 'IMS 已注册，短信接收待验证')
+  assert.equal(result.stages.find(stage => stage.key === 'SMS RX')?.ready, undefined)
+})

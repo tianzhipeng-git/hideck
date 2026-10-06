@@ -3,6 +3,7 @@ package imscore
 import "strings"
 
 const (
+	smsReadyReasonAwaitingDownlink  = "IMS SMS downlink is awaiting verification"
 	smsReadyReasonReady             = "IMS SMS receiver ready"
 	smsReadyReasonNotRegistered     = "IMS registration is not ready"
 	smsReadyReasonProfileNotReady   = "IMS registered identity is not ready"
@@ -33,7 +34,7 @@ func (s *Service) SMSReadiness() SMSReadiness {
 	receiverReady := baseReceiverReady
 	protectedPushRequired := s.protectedSMSPushRequiredLocked()
 	if protectedPushRequired {
-		receiverReady = receiverReady && s.portSPushReady.Load()
+		receiverReady = receiverReady && (s.portSPushReady.Load() || s.registrationDownlinkReadyLocked())
 	}
 	smsc := ""
 	if s.cfg != nil {
@@ -41,9 +42,14 @@ func (s *Service) SMSReadiness() SMSReadiness {
 	}
 	s.mu.RUnlock()
 	readiness := evaluateSMSReadiness(registered, profileReady, transportReady, receiverReady, smsc)
+	portS := s.capturePortSSession()
+	if readiness.Registered && readiness.ProfileReady && readiness.TransportReady &&
+		baseReceiverReady && protectedPushRequired && !readiness.ReceiverReady && portS.generation == 0 {
+		readiness.Reason = smsReadyReasonAwaitingDownlink
+	}
 	readiness.HealthReady = readiness.Ready || smsReceiverHealthReady(smsHealthInput{
 		readiness: readiness, baseReceiverReady: baseReceiverReady,
-		protectedPushRequired: protectedPushRequired, portS: s.capturePortSSession(),
+		protectedPushRequired: protectedPushRequired, portS: portS,
 	})
 	return readiness
 }
@@ -100,6 +106,9 @@ func (s *Service) setSMSReceiverReady(ready bool) {
 	if ready {
 		s.maybeNotifySMSReady(smsReadyReasonReady)
 	}
+	if changed {
+		s.logSMSReadinessDiagnostic("receiver_changed", "observer_present", callback != nil)
+	}
 	if changed && callback != nil {
 		callback(s.SMSReadiness())
 	}
@@ -113,6 +122,7 @@ func (s *Service) notifySMSReadiness() {
 	callback := s.onSMSReadiness
 	s.mu.RUnlock()
 	s.maybeNotifySMSReady(smsReadyReasonReady)
+	s.logSMSReadinessDiagnostic("readiness_notify", "observer_present", callback != nil)
 	if callback != nil {
 		callback(s.SMSReadiness())
 	}
