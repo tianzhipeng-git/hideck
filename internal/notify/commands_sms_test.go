@@ -3,12 +3,14 @@ package notify
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/iniwex5/vowifi-go/runtimehost/messaging"
 	"github.com/yibaiba/hideck/internal/config"
+	"github.com/yibaiba/hideck/internal/db"
 	"github.com/yibaiba/hideck/internal/device"
 	"github.com/yibaiba/hideck/pkg/smscodec"
 )
@@ -22,8 +24,20 @@ func (c testCommandContext) Confirm(string) bool { return true }
 
 func newRoutedSMSTestPool(t *testing.T) (*device.Pool, *device.Worker) {
 	t.Helper()
+	previousDB := db.DB
+	if err := db.Init(filepath.Join(t.TempDir(), "sms.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.DB = previousDB })
+	iccid := "8944000000000000011"
+	if err := db.DB.Create(&db.Device{IMEI: "sms-device", Alias: "wwan0", CurrentICCID: &iccid}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Create(&db.SIMCard{ICCID: iccid, IMSI: "234150000000011"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	pool := device.NewPool(&config.Config{})
-	worker := &device.Worker{ID: "wwan0", Config: config.DeviceConfig{
+	worker := &device.Worker{ID: "wwan0", Pool: pool, Config: config.DeviceConfig{
 		ID: "wwan0", VoWiFiEnabled: true, PhoneMode: "wifi",
 	}}
 	pool.AttachWorkerForTest(worker)

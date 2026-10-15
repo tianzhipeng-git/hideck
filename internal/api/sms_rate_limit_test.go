@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/yibaiba/hideck/internal/backend"
 	"github.com/yibaiba/hideck/internal/config"
+	"github.com/yibaiba/hideck/internal/db"
 	"github.com/yibaiba/hideck/internal/device"
 )
 
@@ -95,11 +97,23 @@ func TestServerDisablesSMSRateLimiterFromConfig(t *testing.T) {
 
 func TestHandleSendSMSReturnsRateLimitBeforeBackendSend(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	previousDB := db.DB
+	if err := db.Init(filepath.Join(t.TempDir(), "sms-rate-limit.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.DB = previousDB })
+	iccid := "8944000000000000011"
+	if err := db.DB.Create(&db.Device{IMEI: "sms-device", Alias: "dev-1", CurrentICCID: &iccid}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DB.Create(&db.SIMCard{ICCID: iccid, IMSI: "234150000000011"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
 	pool := device.NewPool(&config.Config{})
 	sender := &smsRateLimitBackendStub{}
 	setNestedPrivateField(t, pool, []string{"workers"}, map[string]*device.Worker{
-		"dev-1": {ID: "dev-1", Backend: sender},
+		"dev-1": {ID: "dev-1", Pool: pool, Backend: sender},
 	})
 	server := &Server{
 		pool:       pool,

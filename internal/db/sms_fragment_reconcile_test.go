@@ -12,7 +12,7 @@ func TestSaveReceivedMultipartSMSReconcilesDegradedRecord(t *testing.T) {
 	}
 	degradedAt := time.Date(2026, 8, 10, 14, 30, 5, 0, time.UTC)
 	input := ReceivedMultipartSMS{
-		IMSI: "IMSI-FRAGMENT", LocalPhone: "+447840844894",
+		ICCID: "ICC-FRAGMENT", IMSI: "IMSI-FRAGMENT", LocalPhone: "+447840844894",
 		Sender: "giffgaff", Recipient: "+447840844894",
 		Content:            "[incomplete 1/2 missing=2] Hi there.",
 		FragmentSessionKey: "sender=giffgaff|ref=212", Timestamp: degradedAt,
@@ -64,7 +64,7 @@ func assertReconciledMultipartSMS(t *testing.T, smsID uint, originalTimestamp ti
 func TestSaveReceivedMultipartSMSKeepsOtherSessionsIndependent(t *testing.T) {
 	openTestDB(t)
 	base := ReceivedMultipartSMS{
-		IMSI: "IMSI-INDEPENDENT", Sender: "giffgaff", Content: "part one",
+		ICCID: "ICC-INDEPENDENT", IMSI: "IMSI-INDEPENDENT", Sender: "giffgaff", Content: "part one",
 		Recipient: "+447840844894", LocalPhone: "+447840844894",
 		Timestamp: time.Now(), Incomplete: true,
 	}

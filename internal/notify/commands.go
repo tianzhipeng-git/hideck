@@ -78,14 +78,22 @@ func (m *Manager) handleCmdSendSMS(cmdCtx CommandContext, args []string) string 
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		ctx = messaging.WithSuppressSendTGSuccess(ctx)
+		snapshot, err := worker.SMSRecordSnapshot()
+		if err != nil {
+			cmdCtx.Reply(commandFailureBlock("发送短信", deviceID, err.Error()))
+			return
+		}
 		routed, sendErr := m.pool.SendRoutedSMS(ctx, worker, phone, message, smscodec.SubmitOptions{})
 		channel := smsRouteChannelLabel(routed.Via)
 		if sendErr != nil {
+			if err := device.SaveSentSMS(snapshot, phone, message, 3, time.Now()); err != nil {
+				logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", err)
+			}
 			cmdCtx.Reply(fmt.Sprintf("发送短信 / 失败\n设备    %s\n号码    %s\n通道    %s\n原因    %v", displayName, phone, channel, sendErr))
 			return
 		}
 		if routed.Via == device.RoutedSMSViaCS {
-			if err := db.SaveSMS(worker.GetIMSI(), worker.ID, phone, message, 2, 2, time.Now()); err != nil {
+			if err := device.SaveSentSMS(snapshot, phone, message, 2, time.Now()); err != nil {
 				logger.Warn("短信发送成功但入库失败", "device", deviceID, "err", err)
 			}
 		}

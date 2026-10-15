@@ -10,7 +10,8 @@ import (
 )
 
 type poolVoWiFiRuntimeDispatcher struct {
-	pool *Pool
+	pool     *Pool
+	identity *SMSIdentity
 }
 
 func applyVoWiFiSMSMemoryPressure(set func(bool), persistErr error, retained vowifiSMSRecordResult) {
@@ -37,7 +38,7 @@ func (d poolVoWiFiRuntimeDispatcher) Dispatch(ctx context.Context, e eventhost.E
 	if d.pool == nil || e == nil {
 		return
 	}
-	recorder := vowifiSMSHistoryRecorder{pool: d.pool}
+	recorder := vowifiSMSHistoryRecorder{pool: d.pool, identity: d.identity}
 	var recordResult vowifiSMSRecordResult
 	switch v := e.(type) {
 	case eventhost.SMSReceived:

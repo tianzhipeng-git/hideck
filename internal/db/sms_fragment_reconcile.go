@@ -12,6 +12,8 @@ const smsFragmentSessionUniqueIndexSQL = "CREATE UNIQUE INDEX IF NOT EXISTS uidx
 	"ON sms(imsi, fragment_session_key) WHERE fragment_session_key <> ''"
 
 type ReceivedMultipartSMS struct {
+	ICCID              string
+	ProfileName        string
 	IMSI               string
 	LocalPhone         string
 	Sender             string
@@ -20,7 +22,6 @@ type ReceivedMultipartSMS struct {
 	FragmentSessionKey string
 	Timestamp          time.Time
 	Incomplete         bool
-	iccid              string
 }
 
 type ReceivedMultipartSMSResult struct {
@@ -70,12 +71,13 @@ func SaveReceivedMultipartSMS(input ReceivedMultipartSMS) (ReceivedMultipartSMSR
 func normalizeReceivedMultipartSMS(input ReceivedMultipartSMS) (ReceivedMultipartSMS, error) {
 	result := input
 	result.IMSI = strings.TrimSpace(input.IMSI)
+	result.ICCID = CanonicalICCID(input.ICCID)
 	result.LocalPhone = strings.TrimSpace(input.LocalPhone)
 	result.Sender = strings.TrimSpace(input.Sender)
 	result.Recipient = strings.TrimSpace(input.Recipient)
 	result.Content = strings.TrimSpace(input.Content)
 	result.FragmentSessionKey = strings.TrimSpace(input.FragmentSessionKey)
-	if result.IMSI == "" || result.Sender == "" || result.Content == "" || result.FragmentSessionKey == "" {
+	if result.ICCID == "" || result.IMSI == "" || result.Sender == "" || result.Content == "" || result.FragmentSessionKey == "" {
 		return ReceivedMultipartSMS{}, errors.New("invalid received multipart SMS")
 	}
 	if result.Timestamp.IsZero() {
@@ -84,7 +86,6 @@ func normalizeReceivedMultipartSMS(input ReceivedMultipartSMS) (ReceivedMultipar
 	result.LocalPhone = normalizeSMSLocalPhone(
 		result.IMSI, 1, result.LocalPhone, result.Sender, result.Recipient,
 	)
-	result.iccid = GetICCIDForIMSI(result.IMSI)
 	return result, nil
 }
 
@@ -93,10 +94,11 @@ func createReceivedMultipartSMS(
 	input ReceivedMultipartSMS,
 ) (ReceivedMultipartSMSResult, error) {
 	sms := SMS{
-		IMSI: input.IMSI, ICCID: input.iccid,
-		Peer:       normalizeSMSPeer(1, input.Sender, input.Recipient),
-		LocalPhone: input.LocalPhone,
-		Sender:     input.Sender, Recipient: input.Recipient, Content: input.Content,
+		IMSI: input.IMSI, ICCID: input.ICCID,
+		ProfileName: strings.TrimSpace(input.ProfileName),
+		Peer:        normalizeSMSPeer(1, input.Sender, input.Recipient),
+		LocalPhone:  input.LocalPhone,
+		Sender:      input.Sender, Recipient: input.Recipient, Content: input.Content,
 		Type: 1, Status: 0, Timestamp: input.Timestamp.Truncate(time.Second),
 		FragmentSessionKey: input.FragmentSessionKey, Incomplete: input.Incomplete,
 	}

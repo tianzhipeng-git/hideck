@@ -20,14 +20,15 @@ type SMSIdentity struct {
 }
 
 type SMSRecord struct {
-	Identity   SMSIdentity
-	LocalPhone string
-	Sender     string
-	Recipient  string
-	Content    string
-	Type       int
-	Status     int
-	Timestamp  time.Time
+	ProfileName string
+	Identity    SMSIdentity
+	LocalPhone  string
+	Sender      string
+	Recipient   string
+	Content     string
+	Type        int
+	Status      int
+	Timestamp   time.Time
 }
 
 func LookupDeviceSMSIdentity(deviceID string) (SMSIdentity, bool, error) {
@@ -121,9 +122,10 @@ func SaveSMSForIdentity(input SMSRecord) error {
 	recipient := strings.TrimSpace(input.Recipient)
 	sms := SMS{
 		IMSI: input.Identity.IMSI, ICCID: input.Identity.ICCID,
-		Peer:       normalizeSMSPeer(input.Type, sender, recipient),
-		LocalPhone: normalizeSMSLocalPhone(input.Identity.IMSI, input.Type, input.LocalPhone, sender, recipient),
-		Sender:     sender, Recipient: recipient, Content: input.Content,
+		ProfileName: strings.TrimSpace(input.ProfileName),
+		Peer:        normalizeSMSPeer(input.Type, sender, recipient),
+		LocalPhone:  normalizeSMSLocalPhone(input.Identity.IMSI, input.Type, input.LocalPhone, sender, recipient),
+		Sender:      sender, Recipient: recipient, Content: input.Content,
 		Type: input.Type, Status: input.Status, Timestamp: input.Timestamp.Truncate(time.Second),
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {

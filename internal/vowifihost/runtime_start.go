@@ -104,6 +104,10 @@ func (m *Manager) StartRuntime(ctx context.Context, req RuntimeStartRequest) (Ru
 	readiness := newRuntimeReadinessTracker(m, runtimeReadinessConfig{
 		DeviceID: deviceID, TraceID: req.TraceID, StartedAt: req.StartedAt,
 	})
+	dispatch := req.Prepared.Dispatch
+	if dispatch == nil {
+		dispatch = req.Dispatch
+	}
 	inst, err := m.runtimeStarter()(ctx, runtimehost.StartRequest{
 		Mode:          mode,
 		DeviceID:      deviceID,
@@ -117,7 +121,7 @@ func (m *Manager) StartRuntime(ctx context.Context, req RuntimeStartRequest) (Ru
 		Dataplane:     req.Dataplane,
 		Proxy:         req.Prepared.Proxy,
 		DeliveryStore: req.DeliveryStore,
-		Dispatch:      req.Dispatch,
+		Dispatch:      dispatch,
 		BeforeStart:   req.BeforeStart,
 		TunnelFactory: req.TunnelFactory,
 		ShouldRun: func() bool {

@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/iniwex5/vowifi-go/runtimehost"
+	"github.com/iniwex5/vowifi-go/runtimehost/eventhost"
 	"github.com/iniwex5/vowifi-go/runtimehost/identity"
 )
 
 type PreparedStart struct {
+	Dispatch      eventhost.Dispatcher
 	Mode          string
 	Profile       identity.Profile
 	Prepared      identity.PreparedSession
@@ -19,7 +21,7 @@ type PreparedStart struct {
 	Proxy         *runtimehost.ProxyConfig
 	NetworkMode   string
 	StartupState  runtimehost.State
-	PhoneMode     string                  // wifi | cellular
+	PhoneMode     string                    // wifi | cellular
 	TunnelFactory runtimehost.TunnelFactory // cellular mode: non-nil
 }
 

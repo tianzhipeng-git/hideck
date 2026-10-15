@@ -1185,8 +1185,13 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		return
 	}
 
-	// 获取 IMSI 用于入库
-	imsi := worker.GetIMSI()
+	// 在发送前保存卡身份，避免发送完成后切卡影响历史记录。
+	snapshot, snapshotErr := worker.SMSRecordSnapshot()
+	if snapshotErr != nil {
+		status, message := smsIdentityHTTPError(snapshotErr)
+		c.JSON(status, gin.H{"status": "error", "message": message})
+		return
+	}
 	messageID := ""
 	partsTotal := 1
 	deliveryState := "acked"
@@ -1202,7 +1207,9 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 	if err != nil {
 		if routed.Via == device.RoutedSMSViaVoWiFi || routed.FellBackToCS {
 			deliveryState = "failed"
-			_ = device.RecordVoWiFiSMSSendFailure(s.pool, deviceID, req.Phone, req.Message, time.Now())
+			if persistErr := device.SaveSentSMS(snapshot, req.Phone, req.Message, 3, time.Now()); persistErr != nil {
+				logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", persistErr)
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":         "error",
 				"message":        "VoWiFi 短信发送失败: " + err.Error(),
@@ -1214,10 +1221,8 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 			})
 			return
 		}
-		if imsi != "" {
-			if persistErr := db.SaveSMS(imsi, worker.ID, req.Phone, req.Message, 2, 3, time.Now()); persistErr != nil {
-				logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", persistErr)
-			}
+		if persistErr := device.SaveSentSMS(snapshot, req.Phone, req.Message, 3, time.Now()); persistErr != nil {
+			logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", persistErr)
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  "error",
@@ -1231,10 +1236,8 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		if routed.FellBackToCS {
 			deliveryState = "acked"
 		}
-		if imsi != "" {
-			if persistErr := db.SaveSMS(imsi, worker.ID, req.Phone, req.Message, 2, 2, time.Now()); persistErr != nil {
-				logger.Warn("短信发送成功但入库失败", "device", deviceID, "err", persistErr)
-			}
+		if persistErr := device.SaveSentSMS(snapshot, req.Phone, req.Message, 2, time.Now()); persistErr != nil {
+			logger.Warn("短信发送成功但入库失败", "device", deviceID, "err", persistErr)
 		}
 	}
 

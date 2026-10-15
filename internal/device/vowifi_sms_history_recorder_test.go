@@ -199,7 +199,8 @@ func TestVoWiFiSMSHistoryRecorderPersistsSendFailure(t *testing.T) {
 	p := NewPool(nil)
 	p.workers["dev-fail"] = &Worker{ID: "dev-fail", Backend: &workerPhoneBackendStub{imsi: "imsi-fail"}}
 
-	err := vowifiSMSHistoryRecorder{pool: p}.RecordSendFailure("dev-fail", "+10010", "failed sms", time.Now())
+	snapshot := (vowifiSMSHistoryRecorder{pool: p}).snapshot("dev-fail")
+	err := SaveSentSMS(smsRecordForSnapshot(snapshot), "+10010", "failed sms", 3, time.Now())
 	if err != nil {
 		t.Fatalf("RecordSendFailure() error=%v", err)
 	}
