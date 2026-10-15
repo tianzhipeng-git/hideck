@@ -1,7 +1,7 @@
 import { api } from '../stores/auth'
 import { callService } from './http'
 import type { ServiceResult } from '../types/domain'
-import type { DeviceMgmtListItem } from '../types/api'
+import type { SmsCard } from '../types/sms'
 import type { SMSContactDTO, SMSMessageDTO, SmsThreadVM } from '../types/view-model'
 import { normalizeSmsUnreadCount } from '../utils/smsPresentation'
 
@@ -60,6 +60,7 @@ export function normalizeThread(contact: SMSContactDTO): SmsThreadVM {
     lastMessage: String(contact.last_content || '').slice(0, 80),
     lastDeviceName: contact.device_name,
     localPhone: contact.local_phone || '',
+    profileName: contact.profile_name || '',
     unreadCount: normalizeSmsUnreadCount(contact.unread_count),
     peerLower: String(contact.peer || '').toLowerCase(),
     lastMessageLower: String(contact.last_content || '').toLowerCase()
@@ -93,22 +94,29 @@ function reuseInflight<T>(key: string, task: () => Promise<T>): Promise<ServiceR
 }
 
 export const smsService = {
-  listDevices() {
-    return reuseInflight('sms:listDevices', async () => {
-      const res = await api.get('/devices')
-      const list = (res.data?.devices || []) as DeviceMgmtListItem[]
-      // SMS 已是系统不变量（恒开），不再按 sms_enabled 过滤；仅展示运行中设备。
-      return list.filter(d => d.running)
+  listCards() {
+    return reuseInflight('sms:listCards', async () => {
+      const res = await api.get<SmsCard[]>('/sms/cards')
+      return res.data
     })
   },
-  listContacts(deviceId?: string) {
-    const key = `sms:listContacts:${deviceId && deviceId !== 'all' ? deviceId : 'all'}`
-    return reuseInflight(key, async () => {
+  listContacts(iccid?: string) {
+    const card = iccid && iccid !== 'all' ? iccid : ''
+    return reuseInflight(`sms:listContacts:${card}`, async () => {
       const params: Record<string, string> = { limit: '200' }
-      if (deviceId && deviceId !== 'all') params.device_id = deviceId
-      const res = await api.get('/sms/contacts', { params })
-      const list = (res.data || []) as SMSContactDTO[]
-      return list.map(normalizeThread).sort((a, b) => b.lastTs - a.lastTs)
+      if (card) params.iccid = card
+      const contacts: SMSContactDTO[] = []
+      for (;;) {
+        const res = await api.get<SMSContactDTO[]>('/sms/contacts', { params: { ...params } })
+        const page = res.data || []
+        contacts.push(...page)
+        if (page.length < 200) break
+        const last = page[page.length - 1]
+        params.before_ts = last.last_timestamp
+        params.before_iccid = last.iccid || ''
+        params.before_peer = last.peer
+      }
+      return contacts.map(normalizeThread)
     })
   },
   getThread(params: SmsThreadQueryParams) {

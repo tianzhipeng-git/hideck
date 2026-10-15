@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import { DeviceEq24Regular, Grid24Regular } from '@vicons/fluent'
-import type { SmsDeviceChannelPresentation } from '../../utils/smsPresentation'
+import type { SmsCardPresentation } from '../../utils/smsPresentation'
 
 defineProps<{
-  items: readonly SmsDeviceChannelPresentation[]
+  items: readonly SmsCardPresentation[]
   selectedId: string
 }>()
 
 const emit = defineEmits<{
-  select: [deviceId: string]
+  select: [iccid: string]
 }>()
 </script>
 
 <template>
-  <aside class="sms-device-rail" aria-label="短信设备通道">
+  <aside class="sms-device-rail" aria-label="短信卡与 profile">
     <header>
-      <span>设备</span>
-      <strong>{{ items[0]?.statusLabel || '0/0 在线' }}</strong>
+      <span>卡 / profile</span>
+      <strong>{{ items[0]?.statusLabel || '0 张卡' }}</strong>
     </header>
     <div class="sms-device-scroll">
       <button
@@ -37,6 +37,7 @@ const emit = defineEmits<{
         <span class="sms-device-copy">
           <strong>{{ item.label }}</strong>
           <small>{{ item.detail }}</small>
+          <small>{{ item.statusLabel }}</small>
         </span>
         <i
           v-if="item.id !== 'all'"
@@ -140,23 +141,11 @@ const emit = defineEmits<{
   .sms-device-switch:hover:not(.is-active) { background: var(--ui-surface-muted); }
 }
 
-@media (max-width: 1180px) {
-  .sms-device-rail > header { display: none; }
-  .sms-device-scroll { padding: 7px; }
-  .sms-device-switch {
-    min-height: 54px;
-    padding: 0;
-    grid-template-columns: 1fr;
-    place-items: center;
-  }
-  .sms-device-copy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .sms-device-presence { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; }
-}
-
-@media (max-width: 820px) {
-  .sms-device-scroll { padding: 5px; }
-  .sms-device-switch { min-height: 48px; }
-  .sms-device-icon { font-size: 18px; }
+@container (max-width: 979px) {
+  .sms-device-rail { border-right: 0; border-bottom: 1px solid var(--ui-border); }
+  .sms-device-rail > header { min-height: 36px; }
+  .sms-device-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 4px 10px 10px; }
+  .sms-device-switch { width: 240px; flex: 0 0 240px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

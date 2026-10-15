@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { AppError } from '../types/domain'
-import type { DeviceMgmtListItem } from '../types/api'
+import type { SmsCard } from '../types/sms'
 import type { SMSMessageDTO, SmsThreadVM } from '../types/view-model'
 import {
   smsService,
@@ -12,7 +12,7 @@ import {
 } from '../services/sms'
 
 export const useSMSStore = defineStore('sms', () => {
-  const devices = ref<DeviceMgmtListItem[]>([])
+  const cards = ref<SmsCard[]>([])
   const threads = ref<SmsThreadVM[]>([])
   const threadMessages = ref<SMSMessageDTO[]>([])
 
@@ -20,14 +20,14 @@ export const useSMSStore = defineStore('sms', () => {
   const lastOkAt = ref<number | null>(null)
   const error = ref<AppError | null>(null)
 
-  async function fetchDevices() {
-    const result = await smsService.listDevices()
-    if (result.ok) devices.value = result.data
+  async function fetchCards() {
+    const result = await smsService.listCards()
+    if (result.ok) cards.value = result.data
     return result
   }
 
-  async function fetchThreads(deviceId?: string) {
-    const result = await smsService.listContacts(deviceId)
+  async function fetchThreads(iccid?: string) {
+    const result = await smsService.listContacts(iccid)
     if (result.ok) {
       threads.value = result.data
       lastOkAt.value = Date.now()
@@ -61,13 +61,13 @@ export const useSMSStore = defineStore('sms', () => {
   }
 
   return {
-    devices,
+    cards,
     threads,
     threadMessages,
     loading,
     lastOkAt,
     error,
-    fetchDevices,
+    fetchCards,
     fetchThreads,
     fetchThread,
     send,

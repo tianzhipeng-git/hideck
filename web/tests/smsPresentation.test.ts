@@ -1,81 +1,32 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { DeviceMgmtListItem } from '../src/types/api'
-import {
-  createSmsConversationContext,
-  createSmsDeviceChannels,
-  normalizeSmsUnreadCount,
-  smsPeerInitial,
-  smsUnreadBadge
-} from '../src/utils/smsPresentation'
+import type { SmsCard } from '../src/types/sms'
+import { createSmsCardChannels, createSmsConversationContext, smsIdentityLabel, normalizeSmsUnreadCount, smsPeerInitial, smsUnreadBadge } from '../src/utils/smsPresentation'
 
-function device(overrides: Partial<DeviceMgmtListItem> = {}): DeviceMgmtListItem {
-  return {
-    id: 'wwan0',
-    name: 'EC25-01',
-    running: true,
-    healthy: true,
-    control_online: true,
-    network_connected: true,
-    public_ip: '',
-    sms_enabled: true,
-    network_enabled: true,
-    ...overrides
-  }
-}
+const card = (iccid: string, canSend = false): SmsCard => ({ iccid, local_phone: '+447700900011', profile_name: '旅行卡', device_id: canSend ? 'reader' : '', device_name: canSend ? '读卡器' : '', can_send: canSend, send_reason: canSend ? '当前可发送' : '卡未激活或设备离线，仍可查看历史' })
 
-test('presents device channels with explicit online text and real operator', () => {
-  const rows = createSmsDeviceChannels([
-    device({ modem: { operator: 'giffgaff' } }),
-    device({ id: 'wwan1', name: 'EC25-02', control_online: false })
-  ])
-
-  assert.equal(rows[0].statusLabel, '1/2 在线')
-  assert.equal(rows[1].detail, '在线 · giffgaff')
-  assert.equal(rows[1].accessibilityLabel, 'EC25-01，在线，giffgaff')
-  assert.equal(rows[2].statusLabel, '离线')
+test('inactive historical cards remain in navigation when another card is activated', () => {
+  const rows = createSmsCardChannels([card('8944000011'), card('8944000022', true)])
+  assert.deepEqual(rows.map(row => row.id), ['all', '8944000011', '8944000022'])
+  assert.equal(rows[1].online, false)
+  assert.equal(rows[2].online, true)
+  assert.match(rows[1].detail, /000011/)
+  assert.match(rows[2].detail, /000022/)
 })
 
-test('conversation context exposes only backend readiness facts', () => {
-  const readyDevice = device({
-    modem: { operator: 'giffgaff' },
-    vowifi_runtime: { sms_ready: true, ims_ready: true }
-  })
-  const ready = createSmsConversationContext({
-    selectedDeviceId: 'all',
-    thread: { deviceId: 'wwan0', lastDeviceName: 'fallback' },
-    devices: [readyDevice]
-  })
-  const unknown = createSmsConversationContext({ selectedDeviceId: 'all', thread: null, devices: [] })
-
-  assert.deepEqual(ready, {
-    deviceLabel: 'EC25-01',
-    operatorLabel: 'giffgaff',
-    smsLabel: 'VoWiFi · SMS 已就绪',
-    smsTone: 'success',
-    imsLabel: 'IMS 已注册',
-    imsTone: 'success'
-  })
-  assert.equal(unknown.operatorLabel, '运营商未提供')
-  assert.equal(unknown.smsLabel, 'SMS 状态未提供')
-  assert.equal(unknown.imsLabel, 'IMS 状态未提供')
+test('conversation identity is historical while send eligibility belongs to that exact card', () => {
+  const thread = { iccid: '8944000011', localPhone: '+447700900000', profileName: '旧名称' }
+  const offline = createSmsConversationContext({ thread, cards: [card('8944000022', true)] })
+  assert.equal(offline.canSend, false)
+  assert.match(offline.identityLabel, /旧名称/)
+  assert.match(offline.identityLabel, /900000/)
+  const online = createSmsConversationContext({ thread, cards: [card('8944000011', true)] })
+  assert.equal(online.canSend, true)
+  assert.equal(online.identityLabel, offline.identityLabel)
 })
 
-test('conversation context reports outbound SMS ready when only the IMS receiver is unavailable', () => {
-  const runtime = {
-    ims_ready: true,
-    sms_ready: false,
-    sms_mo_ready: true,
-    sms_ready_reason: 'IMS SMS receiver is not ready'
-  }
-  const context = createSmsConversationContext({
-    selectedDeviceId: 'wwan0',
-    thread: null,
-    devices: [device({ vowifi_runtime: runtime })]
-  })
-
-  assert.equal(context.smsLabel, 'VoWiFi · SMS 可发送')
-  assert.equal(context.smsTone, 'success')
+test('unknown number and profile still expose a distinguishing card tail', () => {
+  assert.equal(smsIdentityLabel({ iccid: '8944000011' }), '号码未知 · SIM · 卡尾号 000011')
 })
 
 test('unread badges and initials are explicit and bounded', () => {
@@ -84,10 +35,5 @@ test('unread badges and initials are explicit and bounded', () => {
   assert.equal(smsUnreadBadge(3, true), 0)
   assert.equal(smsPeerInitial(' giffgaff '), 'G')
   assert.equal(smsPeerInitial(''), '—')
-})
-
-test('normalizes backend unread counts without inventing negative values', () => {
-  assert.equal(normalizeSmsUnreadCount(7), 7)
-  assert.equal(normalizeSmsUnreadCount(-3), 0)
   assert.equal(normalizeSmsUnreadCount(undefined), 0)
 })

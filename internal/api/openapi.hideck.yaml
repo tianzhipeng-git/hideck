@@ -316,11 +316,37 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
+  /sms/cards:
+    get:
+      tags: [sms]
+      summary: 所有历史卡及当前可用卡的身份与发送状态
+      responses:
+        '200':
+          description: 卡列表；历史可见性不受当前激活状态影响
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SMSCard'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
   /sms/contacts:
     get:
       tags: [sms]
       summary: 短信联系人会话列表
       parameters:
+        - in: query
+          name: iccid
+          description: 本方卡 ICCID，历史查询不依赖激活状态
+          schema:
+            type: string
+        - in: query
+          name: before_iccid
+          description: 与 before_ts、before_peer 一起构成完整分页游标
+          schema:
+            type: string
         - in: query
           name: device_id
           schema:
@@ -4617,9 +4643,31 @@ components:
           type: object
           additionalProperties: true
 
+    SMSCard:
+      type: object
+      properties:
+        iccid:
+          type: string
+        local_phone:
+          type: string
+        profile_name:
+          type: string
+        device_id:
+          type: string
+        device_name:
+          type: string
+        can_send:
+          type: boolean
+        send_reason:
+          type: string
+
     SMSMessage:
       type: object
       properties:
+        iccid:
+          type: string
+        profile_name:
+          type: string
         id:
           type: integer
         imsi:
@@ -4647,6 +4695,8 @@ components:
     SMSContact:
       type: object
       properties:
+        profile_name:
+          type: string
         imsi:
           type: string
         iccid:

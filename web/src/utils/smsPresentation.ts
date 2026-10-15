@@ -1,64 +1,56 @@
-import type { DeviceMgmtListItem } from '../types/api'
+import type { SmsCard } from '../types/sms'
 
-export type SmsDeviceChannelPresentation = Readonly<{
+export type SmsOwnIdentity = Readonly<{ iccid?: string; localPhone?: string; profileName?: string }>
+
+export function smsIdentityLabel(identity: SmsOwnIdentity): string {
+  return `${identity.localPhone || '号码未知'} · ${identity.profileName || 'SIM'} · 卡尾号 ${identity.iccid?.slice(-6) || '未知'}`
+}
+
+export type SmsCardPresentation = Readonly<{
   id: string
   label: string
-  statusLabel: string
   detail: string
+  statusLabel: string
   online: boolean
-  operator?: string
   accessibilityLabel: string
 }>
 
-export type SmsConversationThreadContext = Readonly<{
-  deviceId?: string
-  lastDeviceName?: string
-}>
-
-export type SmsConversationContext = Readonly<{
-  deviceLabel: string
-  operatorLabel: string
-  smsLabel: string
-  smsTone: 'success' | 'danger' | 'muted'
-  imsLabel: string
-  imsTone: 'success' | 'danger' | 'muted'
-}>
-
-export function createSmsDeviceChannels(
-  devices: readonly DeviceMgmtListItem[]
-): readonly SmsDeviceChannelPresentation[] {
-  const rows = devices.map(createDeviceChannel)
-  const onlineCount = rows.filter(row => row.online).length
-  const allStatus = `${onlineCount}/${rows.length} 在线`
-  return Object.freeze([
-    Object.freeze({
-      id: 'all',
-      label: '全部设备',
-      statusLabel: allStatus,
-      detail: `${rows.length} 台设备`,
-      online: onlineCount > 0,
-      accessibilityLabel: `全部设备，${allStatus}`
-    }),
-    ...rows
-  ])
+export function createSmsCardChannels(cards: readonly SmsCard[]): readonly SmsCardPresentation[] {
+  return [
+    { id: 'all', label: '全部卡 / profile', detail: '全部已保存的历史', statusLabel: `${cards.length} 张卡`, online: false, accessibilityLabel: '全部卡 / profile，全部已保存的历史' },
+    ...cards.map(card => ({
+      id: card.iccid,
+      label: card.profile_name || `SIM · ${card.iccid.slice(-6)}`,
+      detail: `${card.local_phone || '号码未知'} · 尾号 ${card.iccid.slice(-6)}`,
+      statusLabel: card.can_send ? '当前可发送' : '仅查看历史',
+      online: card.can_send,
+      accessibilityLabel: `${smsIdentityLabel({ iccid: card.iccid, localPhone: card.local_phone, profileName: card.profile_name })}，${card.send_reason}`
+    }))
+  ]
 }
 
+export type SmsConversationContext = Readonly<{
+  identityLabel: string
+  deviceLabel: string
+  canSend: boolean
+  sendLabel: string
+}>
+
 export function createSmsConversationContext(options: Readonly<{
-  selectedDeviceId: string
-  thread: SmsConversationThreadContext | null
-  devices: readonly DeviceMgmtListItem[]
+  thread: SmsOwnIdentity | null
+  cards: readonly SmsCard[]
 }>): SmsConversationContext {
-  const device = resolveConversationDevice(options)
-  return Object.freeze({
-    deviceLabel: device?.name || options.thread?.lastDeviceName || options.thread?.deviceId || '全部设备',
-    operatorLabel: cleanValue(device?.modem?.operator) || '运营商未提供',
-    ...readinessContext(device)
-  })
+  const card = options.cards.find(card => card.iccid === options.thread?.iccid)
+  return {
+    identityLabel: options.thread ? smsIdentityLabel(options.thread) : '选择本方卡与对方号码的会话',
+    deviceLabel: card?.device_name || '',
+    canSend: card?.can_send === true,
+    sendLabel: card?.send_reason || '卡未激活或设备离线，仍可查看历史'
+  }
 }
 
 export function smsUnreadBadge(unreadCount: number, readLocally = false): number {
-  if (readLocally) return 0
-  return Math.max(0, Number(unreadCount) || 0)
+  return readLocally ? 0 : Math.max(0, Number(unreadCount) || 0)
 }
 
 export function normalizeSmsUnreadCount(value: unknown): number {
@@ -66,62 +58,5 @@ export function normalizeSmsUnreadCount(value: unknown): number {
 }
 
 export function smsPeerInitial(peer: string): string {
-  return Array.from(cleanValue(peer))[0]?.toLocaleUpperCase() || '—'
-}
-
-function createDeviceChannel(device: DeviceMgmtListItem): SmsDeviceChannelPresentation {
-  const online = device.running && (device.control_online ?? device.healthy) === true
-  const statusLabel = online ? '在线' : '离线'
-  const operator = cleanValue(device.modem?.operator)
-  const label = cleanValue(device.name) || device.id
-  return Object.freeze({
-    id: device.id,
-    label,
-    statusLabel,
-    detail: operator ? `${statusLabel} · ${operator}` : statusLabel,
-    online,
-    operator,
-    accessibilityLabel: `${label}，${statusLabel}${operator ? `，${operator}` : ''}`
-  })
-}
-
-function resolveConversationDevice(options: Readonly<{
-  selectedDeviceId: string
-  thread: SmsConversationThreadContext | null
-  devices: readonly DeviceMgmtListItem[]
-}>): DeviceMgmtListItem | undefined {
-  const targetId = options.selectedDeviceId === 'all'
-    ? options.thread?.deviceId
-    : options.selectedDeviceId
-  if (!targetId) return undefined
-  return options.devices.find(device => device.id === targetId)
-}
-
-function readinessContext(device: DeviceMgmtListItem | undefined) {
-  const runtime = device?.vowifi_runtime
-  const smsSendReady = runtime?.sms_mo_ready ?? runtime?.sms_ready
-  return {
-    smsLabel: runtime?.sms_mo_ready === true
-      ? 'VoWiFi · SMS 可发送'
-      : readinessLabel(smsSendReady, 'SMS', runtime?.sms_ready_reason),
-    smsTone: readinessTone(smsSendReady),
-    imsLabel: readinessLabel(runtime?.ims_ready, 'IMS'),
-    imsTone: readinessTone(runtime?.ims_ready)
-  } as const
-}
-
-function readinessLabel(value: boolean | undefined, subject: string, reason?: string): string {
-  if (value === true) return subject === 'SMS' ? 'VoWiFi · SMS 已就绪' : 'IMS 已注册'
-  if (value === false) return cleanValue(reason) || `${subject} 未就绪`
-  return `${subject} 状态未提供`
-}
-
-function readinessTone(value: boolean | undefined): 'success' | 'danger' | 'muted' {
-  if (value === true) return 'success'
-  if (value === false) return 'danger'
-  return 'muted'
-}
-
-function cleanValue(value: string | undefined): string {
-  return String(value || '').trim()
+  return Array.from(String(peer || '').trim())[0]?.toLocaleUpperCase() || '—'
 }

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const smsView = readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8')
-const deviceRail = readFileSync(new URL('../src/components/sms/SmsDeviceRail.vue', import.meta.url), 'utf8')
+const smsView = readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8') + readFileSync(new URL('../src/composables/useSmsWorkspace.ts', import.meta.url), 'utf8')
+const deviceRail = readFileSync(new URL('../src/components/sms/SmsCardRail.vue', import.meta.url), 'utf8')
 const threadList = readFileSync(new URL('../src/components/sms/SmsThreadListPane.vue', import.meta.url), 'utf8')
 const conversationHeader = readFileSync(new URL('../src/components/sms/SmsConversationHeader.vue', import.meta.url), 'utf8')
 const messageTimeline = readFileSync(new URL('../src/components/sms/SmsMessageTimeline.vue', import.meta.url), 'utf8')
@@ -11,7 +11,7 @@ const composer = readFileSync(new URL('../src/components/sms/SmsComposer.vue', i
 const smsService = readFileSync(new URL('../src/services/sms.ts', import.meta.url), 'utf8')
 
 test('SMS workspace uses one continuous shell with dedicated navigation panes', () => {
-  assert.match(smsView, /<SmsDeviceRail/)
+  assert.match(smsView, /<SmsCardRail/)
   assert.match(smsView, /<SmsThreadListPane/)
   assert.match(smsView, /grid-template-columns:\s*218px 310px minmax\(0, 1fr\)/)
   assert.doesNotMatch(smsView, /class="sms-action-row"/)
@@ -34,9 +34,9 @@ test('thread pane preserves virtual scrolling and all production entries', () =>
 
 test('conversation pane exposes real runtime context and explicit message status', () => {
   assert.match(smsView, /createSmsConversationContext/)
-  assert.match(conversationHeader, /context\.operatorLabel/)
-  assert.match(conversationHeader, /context\.smsLabel/)
-  assert.match(conversationHeader, /context\.imsLabel/)
+  assert.match(conversationHeader, /context\.identityLabel/)
+  assert.match(conversationHeader, /context\.canSend/)
+  assert.match(conversationHeader, /context\.canSend/)
   assert.match(messageTimeline, /if \(message\.status === 2\) return '已发送'/)
   assert.match(messageTimeline, /if \(message\.status === 3\) return '发送失败'/)
   assert.match(messageTimeline, /max-width: 64%/)
@@ -62,9 +62,9 @@ test('narrow SMS workspace keeps all three panes visible in the prototype compos
   assert.doesNotMatch(smsView, /v-if="showDeviceSidebar"/)
   assert.doesNotMatch(smsView, /v-if="showListPane"/)
   assert.doesNotMatch(smsView, /v-if="showDetailPane"/)
-  assert.match(smsView, /grid-template-columns:\s*64px minmax\(0, 1fr\)/)
-  assert.match(smsView, /grid-template-rows:\s*250px minmax\(620px, 1fr\)/)
-  assert.match(smsView, /grid-template-columns:\s*52px minmax\(0, 1fr\)/)
+  assert.match(smsView, /grid-template-columns:\s*minmax\(0, 1fr\)/)
+  assert.match(smsView, /grid-template-rows:\s*auto 280px minmax\(620px, 1fr\)/)
+  assert.match(smsView, /grid-template-columns:\s*minmax\(0, 1fr\)/)
   assert.match(smsView, /@media \(prefers-reduced-motion: reduce\)/)
 })
 

@@ -95,7 +95,7 @@ onUnmounted(clearLongPress)
         @pointercancel="clearLongPress"
       >
         <div class="sms-message-meta">
-          <strong>{{ message.type === 1 ? (message.sender || '接收') : (message.device_name || '发送') }}</strong>
+          <strong>{{ message.type === 1 ? (message.sender || '接收') : '我' }}</strong>
           <time>{{ formatDeviceDateTime(message.timestamp) }}</time>
           <span :class="deliveryTone(message)">{{ deliveryLabel(message) }}</span>
           <button
@@ -109,7 +109,17 @@ onUnmounted(clearLongPress)
             <el-icon><Delete24Regular /></el-icon>
           </button>
         </div>
+        <div class="sms-message-identity">{{ message.type === 1 ? '收于' : '发自' }} {{ message.local_phone || '号码未记录' }}</div>
         <p>{{ message.content }}</p>
+        <details class="sms-message-details">
+          <summary>身份详情</summary>
+          <dl>
+            <dt>本机号码</dt><dd>{{ message.local_phone || '当时未记录' }}</dd>
+            <dt>Profile</dt><dd>{{ message.profile_name || '当时未记录' }}</dd>
+            <dt>ICCID</dt><dd>{{ message.iccid || '当时未记录' }}</dd>
+            <dt>IMSI</dt><dd>{{ message.imsi || '当时未记录' }}</dd>
+          </dl>
+        </details>
       </article>
     </section>
   </div>
@@ -175,4 +185,8 @@ onUnmounted(clearLongPress)
 @media (prefers-reduced-motion: reduce) {
   .sms-message-delete { transition: none; }
 }
+.sms-message-identity, .sms-message-details { color: var(--ui-text-muted); font-size: 12px; margin: 4px 0; }
+.sms-message-details summary { cursor: pointer; }
+.sms-message-details dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; }
+.sms-message-details dd { margin: 0; overflow-wrap: anywhere; }
 </style>

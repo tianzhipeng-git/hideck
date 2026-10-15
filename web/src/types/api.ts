@@ -393,6 +393,8 @@ export type DashboardDevice = {
 }
 
 export type SMSMessage = {
+  local_phone?: string
+  profile_name?: string
   id: number
   imsi?: string
   iccid?: string
@@ -407,6 +409,7 @@ export type SMSMessage = {
 }
 
 export type SMSContact = {
+  profile_name?: string
   imsi: string
   iccid?: string
   peer: string

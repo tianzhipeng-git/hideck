@@ -7,10 +7,10 @@ import { smsService } from '../src/services/sms'
 import { api } from '../src/stores/auth'
 
 // Execute the view's real read-state handler with only its reactive state and IO supplied.
-const view = readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8')
-const script = view.split('<script setup lang="ts">')[1].split('</script>')[0]
+const script = readFileSync(new URL('../src/composables/useSmsWorkspace.ts', import.meta.url), 'utf8')
 const source = ts.createSourceFile('Sms.ts', script, ts.ScriptTarget.Latest, true)
-const handler = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'markThreadSeen')!
+const workspace = source.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'useSmsWorkspace') as ts.FunctionDeclaration
+const handler = workspace.body!.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'markThreadSeen')!
 const handlerJS = ts.transpileModule(handler.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
 
 for (const historical of [true, false]) {

@@ -22,7 +22,7 @@ test('target IDs reject malformed and unsafe URLs', () => {
 })
 
 test('SMS page keeps target context through polling and offers explicit latest navigation', () => {
-  const source = readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8') + readFileSync(new URL('../src/composables/useSmsWorkspace.ts', import.meta.url), 'utf8') + readFileSync(new URL('../src/composables/useSmsSending.ts', import.meta.url), 'utf8')
   assert.match(source, /fetchSmsMessageTarget\(targetMessageQuery.value\)/)
   assert.match(source, /includeSmsTargetThread\(result.data, messageTarget.value.thread\)/)
   assert.match(source, /threadMessages.value = messageTarget.value.messages/)

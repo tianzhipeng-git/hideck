@@ -7,6 +7,8 @@ defineProps<{
   parts: number
   length: number
   sending: boolean
+  canSend: boolean
+  sendLabel: string
 }>()
 
 const emit = defineEmits<{
@@ -21,6 +23,7 @@ function updateMessage(value: unknown) {
 
 <template>
   <footer class="sms-composer">
+    <div class="sms-composer-status" role="status">{{ sendLabel }}</div>
     <el-input
       :model-value="modelValue"
       type="textarea"
@@ -29,9 +32,9 @@ function updateMessage(value: unknown) {
       placeholder="输入回复"
       aria-label="短信回复内容"
       @update:model-value="updateMessage"
-      @keydown.enter.exact.prevent="emit('send')"
+      @keydown.enter.exact.prevent="canSend && !sending && emit('send')"
     />
-    <button type="button" class="sms-send" :disabled="sending || !modelValue.trim()" @click="emit('send')">
+    <button type="button" class="sms-send" :disabled="!canSend || sending || !modelValue.trim()" @click="emit('send')">
       <el-icon><Send24Regular /></el-icon>
       <span>{{ sending ? '发送中' : '发送' }}</span>
     </button>
@@ -82,4 +85,5 @@ function updateMessage(value: unknown) {
   .sms-send span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .sms-composer-meta span:last-child { display: none; }
 }
+.sms-composer-status { grid-column: 1 / -1; color: var(--ui-text-muted); font-size: 12px; }
 </style>

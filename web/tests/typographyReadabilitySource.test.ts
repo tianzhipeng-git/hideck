@@ -42,7 +42,7 @@ const proxyInventoryFiles = [
 ] as const
 const smsTypographyFiles = [
   '../src/views/Sms.vue',
-  '../src/components/sms/SmsDeviceRail.vue',
+  '../src/components/sms/SmsCardRail.vue',
   '../src/components/sms/SmsThreadListPane.vue',
   '../src/components/sms/SmsConversationHeader.vue',
   '../src/components/sms/SmsMessageTimeline.vue',
