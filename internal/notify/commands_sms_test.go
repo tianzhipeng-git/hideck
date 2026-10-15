@@ -24,17 +24,16 @@ func (c testCommandContext) Confirm(string) bool { return true }
 
 func newRoutedSMSTestPool(t *testing.T) (*device.Pool, *device.Worker) {
 	t.Helper()
-	previousDB := db.DB
-	if err := db.Init(filepath.Join(t.TempDir(), "sms.db")); err != nil {
-		t.Fatal(err)
+	if err := db.Init(filepath.Join(t.TempDir(), "commands_sms.db")); err != nil {
+		t.Fatalf("db.Init() error=%v", err)
 	}
-	t.Cleanup(func() { db.DB = previousDB })
-	iccid := "8944000000000000011"
-	if err := db.DB.Create(&db.Device{IMEI: "sms-device", Alias: "wwan0", CurrentICCID: &iccid}).Error; err != nil {
-		t.Fatal(err)
+	t.Cleanup(func() { db.DB = nil })
+	imei := "860000000000001"
+	if err := db.UpsertDevice(imei, "wwan0", "test", ""); err != nil {
+		t.Fatalf("UpsertDevice() error=%v", err)
 	}
-	if err := db.DB.Create(&db.SIMCard{ICCID: iccid, IMSI: "234150000000011"}).Error; err != nil {
-		t.Fatal(err)
+	if err := db.UpsertSIMCard("8944000000000000001", "234150000000001", "", "test", &imei); err != nil {
+		t.Fatalf("UpsertSIMCard() error=%v", err)
 	}
 	pool := device.NewPool(&config.Config{})
 	worker := &device.Worker{ID: "wwan0", Pool: pool, Config: config.DeviceConfig{

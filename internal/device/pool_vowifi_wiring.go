@@ -66,7 +66,8 @@ func (p *Pool) StopVoWiFiRuntimeForCellularIdle(deviceID string) error {
 		return nil
 	}
 	p.clearDesiredVoWiFiRecoverState(deviceID)
-	if !p.IsVoWiFiActive(deviceID) && p.GetVoWiFiAppForDevice(deviceID) == nil {
+	if !p.IsVoWiFiActive(deviceID) && !p.voWiFiHost().Starting(deviceID) {
+		p.voWiFiHost().InvalidateRuntime(deviceID, "cellular_on_demand_idle")
 		return nil
 	}
 	return p.voWiFiHost().Disable(p.ctx, deviceID, "cellular_on_demand_idle", true)
@@ -164,6 +165,10 @@ func (p *Pool) SimulateCallWithCellularData(
 	req voicehost.SimulateCallRequest,
 ) (*voicehost.SimulateCallResult, error) {
 	w := p.GetWorker(deviceID)
+	checkOwner := p.outboundOwnerCheck(w)
+	if err := p.AuthorizeOutboundCall(ctx, deviceID, req.Callee); err != nil {
+		return nil, err
+	}
 	cellular := w != nil && w.Config.PhoneMode == "cellular"
 	onDemand := cellular && w.Config.DataStrategy != "always"
 
@@ -188,19 +193,39 @@ func (p *Pool) SimulateCallWithCellularData(
 	if voiceGW == nil {
 		return nil, fmt.Errorf("voice gateway is unavailable")
 	}
+	if err := checkOwner(); err != nil {
+		return nil, err
+	}
 	result, err := voiceGW.SimulateCall(ctx, deviceID, req)
 
 	if onDemand {
-		if stopErr := p.StopVoWiFiRuntimeForCellularIdle(deviceID); stopErr != nil {
-			logger.Warn("蜂窝 on_demand：挂断后停止 IMS 失败", "device", deviceID, "err", stopErr)
-		}
-		if nc := w.NetworkController(); nc != nil && nc.IsConnected() {
-			logger.Info("蜂窝 on_demand：挂断后关闭数据连接", "device", deviceID)
-			if stopErr := w.StopNetwork(); stopErr != nil {
-				logger.Warn("蜂窝 on_demand 关闭数据连接失败", "device", deviceID, "err", stopErr)
-			}
-		}
+		p.cleanupOnDemandCellularCall(w, checkOwner)
 	}
 
 	return result, err
+}
+
+func (p *Pool) cleanupOnDemandCellularCall(w *Worker, checkOwner func() error) {
+	if p == nil || w == nil || checkOwner == nil {
+		return
+	}
+	release, err := p.acquireOutboundOperation(w)
+	if err != nil {
+		logger.Info("蜂窝 on_demand：设备已进入切换流程，跳过旧通话清理", "device", w.ID, "err", err)
+		return
+	}
+	defer release()
+	if err = checkOwner(); err != nil {
+		logger.Info("蜂窝 on_demand：设备或 SIM 已更换，跳过旧通话清理", "device", w.ID, "err", err)
+		return
+	}
+	if err = p.StopVoWiFiRuntimeForCellularIdle(w.ID); err != nil {
+		logger.Warn("蜂窝 on_demand：挂断后停止 IMS 失败", "device", w.ID, "err", err)
+	}
+	if nc := w.NetworkController(); nc != nil && nc.IsConnected() {
+		logger.Info("蜂窝 on_demand：挂断后关闭数据连接", "device", w.ID)
+		if err = w.StopNetwork(); err != nil {
+			logger.Warn("蜂窝 on_demand 关闭数据连接失败", "device", w.ID, "err", err)
+		}
+	}
 }

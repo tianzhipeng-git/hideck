@@ -177,6 +177,7 @@ type Service struct {
 	securityServerIO          net.Listener
 	protectedUDP              *protectedUDPTransport
 	udpDownlinkProven         atomic.Bool
+	rpReportRegisteredFlow    atomic.Bool // RP reports reach the SMSC only over the registered flow
 	clientPortReserve         net.Listener
 	registrationRemote        *net.UDPAddr
 	protectedClientPort       int
@@ -209,7 +210,7 @@ type Service struct {
 	downlinkValidationWake    chan struct{}
 	downlinkGeneration        uint64
 	downlinkRequests          uint64
-	registrationDownlink      registrationDownlinkEvidence
+	smsReception              smsReceptionEvidence
 	registerDownlinkBaseline  downlinkCheckpoint
 	replacementDownlinkWatch  *replacementDownlinkWatch
 	networkDone               sync.WaitGroup
@@ -284,6 +285,7 @@ type Service struct {
 	onSMSReady             func()
 	onSMSReadiness         func(SMSReadiness)
 	smsReceiverReady       bool
+	smsReadinessReason     atomic.Value
 	smsMemoryFull          bool
 	smsMemoryDenied        bool
 	smsMemoryDeniedGateway string
@@ -358,15 +360,16 @@ type pingState struct {
 
 // SMSReadiness describes the independently verifiable IMS SMS prerequisites.
 type SMSReadiness struct {
-	Registered     bool
-	ProfileReady   bool
-	TransportReady bool
-	ReceiverReady  bool
-	SMSCPresent    bool
-	Ready          bool
-	MOReady        bool
-	HealthReady    bool
-	Reason         string
+	ReceiverPending bool
+	Registered      bool
+	ProfileReady    bool
+	TransportReady  bool
+	ReceiverReady   bool
+	SMSCPresent     bool
+	Ready           bool
+	MOReady         bool
+	HealthReady     bool
+	Reason          string
 }
 
 // ServiceStatus is a snapshot of the IMS service state.
@@ -466,6 +469,8 @@ type DeliveryPartMatch = smsdelivery.DeliveryPartMatch
 
 // DeliveryStatus is the SMS delivery status.
 type DeliveryStatus = smsdelivery.DeliveryStatus
+type DeliveryRecord = smsdelivery.DeliveryRecord
+type SMSDeliveryIdentityStore = smsdelivery.IdentityStore
 
 // DeliveryPartStatus is one delivery part.
 type DeliveryPartStatus = smsdelivery.DeliveryPartStatus

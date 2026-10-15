@@ -30,6 +30,16 @@ func (s *Server) handleDeviceNetworkPatch(c *gin.Context) {
 	}
 
 	deviceID := deviceIDParam(c)
+	if deviceID == "" || s == nil || s.pool == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "设备参数无效"})
+		return
+	}
+	releaseMutation := s.pool.AcquireManagedDeviceMutation(deviceID)
+	defer releaseMutation()
+	if s.pool.IsESIMSwitching(deviceID) {
+		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "设备正在切换 SIM，暂不能修改网络"})
+		return
+	}
 
 	if *req.Enabled {
 		class, classifyErr := s.classifyLebaraUKForDevice(c.Request.Context(), deviceID)
@@ -60,7 +70,7 @@ func (s *Server) handleDeviceNetworkPatch(c *gin.Context) {
 			return
 		}
 		s.pool.SetWorkerNetworkPolicy(deviceID, true, effectiveIPVersion, effectiveAPN)
-		s.handleDeviceMgmtStartNetwork(c)
+		s.handleDeviceMgmtStartNetworkLocked(c, deviceID)
 		return
 	}
 
@@ -74,7 +84,7 @@ func (s *Server) handleDeviceNetworkPatch(c *gin.Context) {
 	if err := s.pool.ApplyCurrentCardPolicy(deviceID, "network_disabled"); err != nil {
 		logger.Debug("关闭网络后重投影卡策略失败", "device", deviceID, "err", err)
 	}
-	s.handleDeviceMgmtStopNetwork(c)
+	s.handleDeviceMgmtStopNetworkLocked(c, deviceID)
 }
 
 func (s *Server) handleDeviceVoWiFiPatch(c *gin.Context) {
@@ -85,13 +95,31 @@ func (s *Server) handleDeviceVoWiFiPatch(c *gin.Context) {
 	}
 
 	deviceID := deviceIDParam(c)
+	if deviceID == "" || s == nil || s.pool == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "设备参数无效"})
+		return
+	}
+	releaseMutation := s.pool.AcquireManagedDeviceMutation(deviceID)
+	defer releaseMutation()
+	if s.pool.IsESIMSwitching(deviceID) {
+		c.JSON(http.StatusConflict, gin.H{"status": "error", "message": "设备正在切换 SIM，暂不能修改通话模式"})
+		return
+	}
 
 	if *req.Enabled {
 		// 落库：置 vowifi_enabled=true。若带 mode/data_strategy 则一并落库。
 		mode := normalizePhoneMode(req.Mode)
+		if req.Mode == nil {
+			if w := s.pool.GetWorker(deviceID); w != nil {
+				mode = w.Config.PhoneMode
+			}
+		}
+		if !s.allowModemVoiceModeChange(c, deviceID, mode) {
+			return
+		}
 		strategy := normalizeDataStrategy(req.DataStrategy)
 		forceVoLTE := false
-		if w := s.pool.GetWorker(deviceID); device.WorkerSoftwareIMSBlocked(w) {
+		if w := s.pool.GetWorker(deviceID); device.WorkerSoftwareIMSBlocked(w) && !device.IsModemVoiceMode(mode) {
 			mode = device.PhoneModeVoLTE
 			forceVoLTE = true
 		}
@@ -133,6 +161,14 @@ func (s *Server) handleDeviceVoWiFiPatch(c *gin.Context) {
 			}
 		}
 		s.pool.SetWorkerVoWiFiPolicy(deviceID, true)
+		if w := s.pool.GetWorker(deviceID); w != nil && device.IsModemVoiceMode(w.Config.PhoneMode) {
+			if err := s.pool.ApplyCurrentCardPolicy(deviceID, "api_enable_modem_voice"); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "正在准备模组直拨音频", "device": deviceID})
+			return
+		}
 		if w := s.pool.GetWorker(deviceID); w != nil && device.IsNativeVoLTEMode(w.Config.PhoneMode) {
 			if err := s.pool.ApplyCurrentCardPolicy(deviceID, "api_enable_native_volte"); err != nil {
 				logger.Warn("VoLTE 投影射频失败，仍尝试启用原生 IMS", "device", deviceID, "err", err)
@@ -183,18 +219,21 @@ func (s *Server) handleDeviceVoWiFiPatch(c *gin.Context) {
 			})
 			return
 		}
-		s.handleVoWiFiEnable(c)
+		s.handleVoWiFiEnableLocked(c, deviceID)
 		return
 	}
 
 	// 落库：仅清 vowifi_enabled=false，保留 airplane_enabled（用户飞行意图）。
+	if !s.allowModemVoiceModeChange(c, deviceID, "") {
+		return
+	}
 	// 关闭 VoWiFi 后 DisableVoWiFi 会按当前卡策略重投影：之前是飞行则回飞行，否则回在线。
 	if _, _, err := s.patchCardPolicyForDevice(deviceID, vowifiDisablePolicyMutation); err != nil {
 		writeCardPolicyMutationError(c, err)
 		return
 	}
 	s.pool.SetWorkerVoWiFiPolicy(deviceID, false)
-	s.handleVoWiFiDisable(c)
+	s.handleVoWiFiDisableLocked(c, deviceID)
 }
 
 // vowifiEnablePolicyMutation 开 VoWiFi 的落库副作用：只置 vowifi，飞行意图保持不变。
@@ -248,7 +287,7 @@ func applyVoWiFiEnableToCardPolicy(p *db.CardPolicy) {
 		}
 		return
 	}
-	if p.PhoneMode == "volte" {
+	if p.PhoneMode == "volte" || p.PhoneMode == "modem_voice" {
 		p.AirplaneEnabled = false
 		return
 	}
@@ -265,6 +304,8 @@ func normalizePhoneMode(v *string) string {
 		return "cellular"
 	case "volte":
 		return "volte"
+	case "modem_voice":
+		return "modem_voice"
 	default:
 		return "wifi"
 	}

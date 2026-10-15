@@ -27,6 +27,8 @@ type EventSMSReceived struct {
 	// degraded multipart notification with its eventual complete message.
 	FragmentSessionKey string
 	Incomplete         bool
+	ICCID              string
+	IMSI               string
 }
 
 // EventSMSSent is published when an SMS is sent.
@@ -36,6 +38,9 @@ type EventSMSSent struct {
 	Content    string
 	Time       time.Time
 	TotalParts int
+	MessageID  string
+	ICCID      string
+	IMSI       string
 }
 
 // EventSMSSendAccepted is published when an SMS send is accepted.
@@ -101,6 +106,7 @@ type EventLocalNumberLearned struct {
 	Number string
 	Source string
 	Time   time.Time
+	ICCID  string
 }
 
 // EventLogNotify is a log notification event.

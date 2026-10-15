@@ -144,6 +144,7 @@ const { smsPageRef, cardsError, cardsLastOkAt, messagesError, messagesLastOkAt, 
               联系人
             </el-button>
           </div>
+          <small class="text-xs text-[var(--ui-text-muted)]">号码会原样提交；发送国际号码时请明确输入 + 国家码。</small>
         </el-form-item>
         <el-form-item label="短信内容">
           <el-input

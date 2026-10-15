@@ -17,7 +17,7 @@ func (s *Service) logSMSReadinessDiagnostic(event string, extra ...any) {
 	pushRequired := s.protectedSMSPushRequiredLocked()
 	registrationProtected := s.registrationTCPProtected
 	registrationConnected := s.registrationTCP != nil
-	registrationProven := s.registrationDownlinkReadyLocked()
+	registrationProven := s.registrationSMSProvenLocked()
 	udpProven := s.udpDownlinkProven.Load()
 	portSConnected := s.portSPushReady.Load()
 	s.mu.RUnlock()

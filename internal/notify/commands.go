@@ -78,22 +78,28 @@ func (m *Manager) handleCmdSendSMS(cmdCtx CommandContext, args []string) string 
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 		ctx = messaging.WithSuppressSendTGSuccess(ctx)
-		snapshot, err := worker.SMSRecordSnapshot()
-		if err != nil {
-			cmdCtx.Reply(commandFailureBlock("发送短信", deviceID, err.Error()))
-			return
-		}
 		routed, sendErr := m.pool.SendRoutedSMS(ctx, worker, phone, message, smscodec.SubmitOptions{})
 		channel := smsRouteChannelLabel(routed.Via)
 		if sendErr != nil {
-			if err := device.SaveSentSMS(snapshot, phone, message, 3, time.Now()); err != nil {
-				logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", err)
+			if routed.IdentityRead {
+				if err := device.RecordVoWiFiSMSSendFailure(m.pool, device.VoWiFiSMSSendFailure{
+					DeviceID: deviceID, Target: phone, Content: message,
+					Identity: routed.Identity, IdentityRead: routed.IdentityRead, At: time.Now(),
+				}); err != nil {
+					logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", err)
+				}
 			}
 			cmdCtx.Reply(fmt.Sprintf("发送短信 / 失败\n设备    %s\n号码    %s\n通道    %s\n原因    %v", displayName, phone, channel, sendErr))
 			return
 		}
 		if routed.Via == device.RoutedSMSViaCS {
-			if err := device.SaveSentSMS(snapshot, phone, message, 2, time.Now()); err != nil {
+			err := db.SaveSMSForIdentity(db.SMSRecord{
+				Identity:   db.SMSIdentity{ICCID: routed.Identity.ICCID, IMSI: routed.Identity.IMSI},
+				LocalPhone: routed.Identity.LocalPhone, ProfileName: routed.Identity.ProfileName,
+				Sender: routed.Identity.LocalPhone, Recipient: phone, Content: message,
+				Type: 2, Status: 2, Timestamp: time.Now(),
+			})
+			if err != nil {
 				logger.Warn("短信发送成功但入库失败", "device", deviceID, "err", err)
 			}
 		}
@@ -172,7 +178,7 @@ func (m *Manager) handleCmdStatus(cmdCtx CommandContext, args []string) string {
 		}
 	}
 	localPhone := "--"
-	if phone, err := db.GetSIMCardPhoneNumberByIMSI(status.IMSI); err == nil && strings.TrimSpace(phone) != "" {
+	if phone, err := db.GetPhoneNumberForSMSIdentity(db.SMSIdentity{ICCID: status.ICCID, IMSI: status.IMSI}); err == nil && strings.TrimSpace(phone) != "" {
 		localPhone = strings.TrimSpace(phone)
 	}
 
@@ -335,7 +341,7 @@ func (m *Manager) handleCmdList(cmdCtx CommandContext, args []string) string {
 		phone := "N/A"
 		vowifiActive := m.pool.IsVoWiFiActive(w.ID)
 		opName := device.DisplayOperatorName(status, vowifiActive)
-		if phoneByIMSI, err := db.GetSIMCardPhoneNumberByIMSI(status.IMSI); err == nil && strings.TrimSpace(phoneByIMSI) != "" {
+		if phoneByIMSI, err := db.GetPhoneNumberForSMSIdentity(db.SMSIdentity{ICCID: status.ICCID, IMSI: status.IMSI}); err == nil && strings.TrimSpace(phoneByIMSI) != "" {
 			phone = strings.TrimSpace(phoneByIMSI)
 		}
 		if opName == "" && !vowifiActive && status.ICCID != "" {
@@ -671,12 +677,9 @@ func (m *Manager) handleCmdCall(cmdCtx CommandContext, args []string) string {
 
 	displayName := m.deviceLabel(worker.ID)
 	caller := "未知"
-	if worker.Modem != nil {
-		if imsi := strings.TrimSpace(worker.GetIMSI()); imsi != "" {
-			if phone, err := db.GetSIMCardPhoneNumberByIMSI(imsi); err == nil && strings.TrimSpace(phone) != "" {
-				caller = strings.TrimSpace(phone)
-			}
-		}
+	status := worker.GetCachedDeviceStatus()
+	if phone, err := db.GetPhoneNumberForSMSIdentity(db.SMSIdentity{ICCID: status.ICCID, IMSI: status.IMSI}); err == nil && strings.TrimSpace(phone) != "" {
+		caller = strings.TrimSpace(phone)
 	}
 
 	go func() {
@@ -817,12 +820,9 @@ func (m *Manager) handleCmdCellCall(cmdCtx CommandContext, args []string) string
 
 	displayName := m.deviceLabel(worker.ID)
 	caller := "未知"
-	if worker.Modem != nil {
-		if imsi := strings.TrimSpace(worker.GetIMSI()); imsi != "" {
-			if phone, err := db.GetSIMCardPhoneNumberByIMSI(imsi); err == nil && strings.TrimSpace(phone) != "" {
-				caller = strings.TrimSpace(phone)
-			}
-		}
+	status := worker.GetCachedDeviceStatus()
+	if phone, err := db.GetPhoneNumberForSMSIdentity(db.SMSIdentity{ICCID: status.ICCID, IMSI: status.IMSI}); err == nil && strings.TrimSpace(phone) != "" {
+		caller = strings.TrimSpace(phone)
 	}
 
 	// Two-step confirmation: send prompt, wait for /y or /n.

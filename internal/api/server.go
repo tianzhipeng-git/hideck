@@ -122,9 +122,6 @@ type Server struct {
 	authChangeMu           sync.Mutex
 	passwordChangeRequired bool
 
-	smsLimiterMu sync.Mutex
-	smsLimiter   *smsRateLimiter
-
 	shutdownCh       chan struct{}
 	backgroundCancel context.CancelFunc
 }
@@ -169,10 +166,7 @@ func New(cfg *config.Config, pool *device.Pool, fs http.FileSystem, proxyMgr *se
 			},
 		),
 		loginAttempts: make(map[string]loginAttempt),
-		smsLimiter: newSMSRateLimiterWithConfig(
-			time.Now(), time.Now, cfg.Server.SMSRateLimitDisabled,
-		),
-		shutdownCh: make(chan struct{}),
+		shutdownCh:    make(chan struct{}),
 	}
 	s.backendSwitch = newDeviceBackendSwitchService(pool, configPath)
 	s.initializeCommandCenter()
@@ -221,21 +215,6 @@ func (s *Server) SetVoiceRecordingDirectory(directory string) {
 
 func (s *Server) SetPhoneService(service *phone.Service) {
 	s.phone = service
-}
-
-// smsRateLimiter returns the SMS rate limiter, lazily creating it if needed.
-func (s *Server) smsRateLimiter() *smsRateLimiter {
-	if s.smsLimiter != nil {
-		return s.smsLimiter
-	}
-	s.smsLimiterMu.Lock()
-	defer s.smsLimiterMu.Unlock()
-	if s.smsLimiter == nil {
-		s.smsLimiter = newSMSRateLimiterWithConfig(
-			time.Now(), time.Now, s.cfg.SMSRateLimitDisabled,
-		)
-	}
-	return s.smsLimiter
 }
 
 // checkPassword 验证密码，支持 bcrypt 哈希和明文（向后兼容）
@@ -349,6 +328,7 @@ func (s *Server) newRouter() *gin.Engine {
 
 	// 以下接口需要鉴权
 	api.Use(s.authMiddleware())
+	api.Use(s.mbnMutationMiddleware())
 	{
 		api.POST("/system/uninstall", s.handleUninstall) // 必须登录后才能调用，见 handleUninstall 内的鉴权检查
 		api.GET("/openapi.yaml", s.handleOpenAPIYAML)
@@ -361,6 +341,7 @@ func (s *Server) newRouter() *gin.Engine {
 		api.GET("/traffic/analysis", s.handleTrafficAnalysis)       // 流量分析统计
 		s.registerPhoneRoutes(api)
 		s.registerUtRoutes(api)
+		s.registerMBNRoutes(api)
 
 		// ===== 短信 =====
 		api.POST("/sms/send", s.handleSendSMS)                    // 发送短信（自动选择 AT 或 VoWiFi）
@@ -368,6 +349,7 @@ func (s *Server) newRouter() *gin.Engine {
 		api.GET("/sms/cards", s.handleGetSMSCards)
 		api.GET("/sms/contacts", s.handleGetSMSContacts)          // 获取短信联系人列表
 		api.GET("/sms/notifications", s.handleSMSNotifications)   // 全局未读数量与增量来信提醒
+		api.GET("/sms/events", s.handleSMSEvents)                 // 来信 SSE，Last-Event-ID / after_id 补发未读
 		api.GET("/sms/messages/:id", s.handleSMSMessageTarget)    // 按消息定位会话与历史窗口
 		api.GET("/sms/thread", s.handleGetSMSThread)              // 获取与某联系人的短信会话
 		api.PATCH("/sms/thread", s.handleMarkSMSThreadRead)       // 持久化指定会话已读进度
@@ -519,7 +501,7 @@ func withCommandEventStreamDeadlineDisabled(next http.Handler) http.Handler {
 }
 
 func isCommandEventStreamPath(path string) bool {
-	return path == "/api/command-center/stream" || path == "/api/commands/events/stream" || path == "/api/phone/events"
+	return path == "/api/command-center/stream" || path == "/api/commands/events/stream" || path == "/api/phone/events" || path == "/api/sms/events"
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
@@ -620,6 +602,7 @@ func (s *Server) handleListDevices(c *gin.Context) {
 		VoWiFiRuntime    *voWiFiRuntimeDTO                 `json:"vowifi_runtime,omitempty"`
 		VoWiFiHealth     *device.WiFiCallingHealthSnapshot `json:"vowifi_health,omitempty"`
 		NativeVoLTE      *volte.Status                     `json:"native_volte,omitempty"`
+		ModemVoice       map[string]interface{}            `json:"modem_voice,omitempty"`
 		Traffic          map[string]string                 `json:"traffic,omitempty"`
 		NetworkConnected bool                              `json:"network_connected"`
 	}
@@ -649,6 +632,7 @@ func (s *Server) handleListDevices(c *gin.Context) {
 			VoWiFiActive:     s.pool.IsVoWiFiActive(w.ID), // 逐个设备判断 VoWiFi 状态，支持多设备
 			VoWiFiRuntime:    s.getVoWiFiRuntimeDTO(w.ID),
 			VoWiFiHealth:     s.getWiFiCallingHealth(w.ID),
+			ModemVoice:       s.pool.ModemVoiceStatus(w.ID),
 			NetworkConnected: w.NetworkConnected(),
 		}
 		if device.IsNativeVoLTEMode(cfg.PhoneMode) {
@@ -982,6 +966,8 @@ func (s *Server) handleRotate(c *gin.Context) {
 			return
 		}
 	}
+	releaseMutation := s.pool.AcquireManagedDeviceMutation(deviceID)
+	defer releaseMutation()
 
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
@@ -1032,6 +1018,16 @@ func (s *Server) handleRotate(c *gin.Context) {
 
 func (s *Server) handleDeviceMgmtStartNetwork(c *gin.Context) {
 	deviceID := deviceIDParam(c)
+	if deviceID == "" || s == nil || s.pool == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "设备参数无效"})
+		return
+	}
+	releaseMutation := s.pool.AcquireManagedDeviceMutation(deviceID)
+	defer releaseMutation()
+	s.handleDeviceMgmtStartNetworkLocked(c, deviceID)
+}
+
+func (s *Server) handleDeviceMgmtStartNetworkLocked(c *gin.Context, deviceID string) {
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
@@ -1053,7 +1049,7 @@ func (s *Server) handleDeviceMgmtStartNetwork(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "启动数据网络失败: " + err.Error()})
 		return
 	}
-	go func() { _ = worker.RefreshRuntime(nil, "start_network") }()
+	go s.refreshManagedWorkerRuntime(worker, "start_network")
 	c.JSON(http.StatusOK, gin.H{
 		"status":            "ok",
 		"message":           "数据网络已启动",
@@ -1068,6 +1064,16 @@ func (s *Server) handleDeviceMgmtStartNetwork(c *gin.Context) {
 
 func (s *Server) handleDeviceMgmtStopNetwork(c *gin.Context) {
 	deviceID := deviceIDParam(c)
+	if deviceID == "" || s == nil || s.pool == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "设备参数无效"})
+		return
+	}
+	releaseMutation := s.pool.AcquireManagedDeviceMutation(deviceID)
+	defer releaseMutation()
+	s.handleDeviceMgmtStopNetworkLocked(c, deviceID)
+}
+
+func (s *Server) handleDeviceMgmtStopNetworkLocked(c *gin.Context, deviceID string) {
 	worker := s.pool.GetWorker(deviceID)
 	if worker == nil {
 		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "设备未找到"})
@@ -1082,7 +1088,7 @@ func (s *Server) handleDeviceMgmtStopNetwork(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "停止数据网络失败: " + err.Error()})
 		return
 	}
-	go func() { _ = worker.RefreshRuntime(nil, "stop_network") }()
+	go s.refreshManagedWorkerRuntime(worker, "stop_network")
 	c.JSON(http.StatusOK, gin.H{
 		"status":            "ok",
 		"message":           "数据网络已停止",
@@ -1172,34 +1178,14 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 	deviceID := worker.ID
 	sendOpts := smscodec.SubmitOptions{Encoding: encoding}
 
-	if rate := s.smsRateLimiter().Allow(); !rate.Allowed {
-		retryAfterSeconds := int64(rate.RetryAfter.Seconds())
-		if retryAfterSeconds < 0 {
-			retryAfterSeconds = 0
-		}
-		c.JSON(http.StatusTooManyRequests, gin.H{
-			"status":              "error",
-			"code":                "sms_rate_limited",
-			"reason":              rate.Code,
-			"message":             rate.Message,
-			"retry_after_seconds": retryAfterSeconds,
-			"request_id":          requestID(c),
-		})
-		return
-	}
-
-	// 在发送前保存卡身份，避免发送完成后切卡影响历史记录。
-	snapshot, snapshotErr := worker.SMSRecordSnapshot()
-	if snapshotErr != nil {
-		status, message := smsIdentityHTTPError(snapshotErr)
-		c.JSON(status, gin.H{"status": "error", "message": message})
-		return
-	}
 	messageID := ""
 	partsTotal := 1
 	deliveryState := "acked"
 
 	routed, err := s.pool.SendRoutedSMS(c.Request.Context(), worker, req.Phone, req.Message, sendOpts)
+	if respondOutboundLimit(c, err) {
+		return
+	}
 	if routed.Outcome.PartsTotal > 0 {
 		partsTotal = routed.Outcome.PartsTotal
 	}
@@ -1210,28 +1196,37 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 	if err != nil {
 		if routed.Via == device.RoutedSMSViaVoWiFi || routed.FellBackToCS {
 			deliveryState = "failed"
-			if persistErr := device.SaveSentSMS(snapshot, req.Phone, req.Message, 3, time.Now()); persistErr != nil {
-				logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", persistErr)
+			recordErr := device.RecordVoWiFiSMSSendFailure(s.pool, device.VoWiFiSMSSendFailure{
+				DeviceID: deviceID, Target: req.Phone, Content: req.Message,
+				Identity: routed.Identity, IdentityRead: routed.IdentityRead, At: time.Now(),
+			})
+			if recordErr != nil {
+				logger.Warn("VoWiFi 短信发送失败记录入库失败", "device", deviceID, "err", recordErr)
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":         "error",
 				"message":        "VoWiFi 短信发送失败: " + err.Error(),
 				"device":         deviceID,
 				"phone":          req.Phone,
+				"destination":    routed.Destination,
 				"message_id":     messageID,
 				"parts_total":    partsTotal,
 				"delivery_state": deliveryState,
 			})
 			return
 		}
-		if persistErr := device.SaveSentSMS(snapshot, req.Phone, req.Message, 3, time.Now()); persistErr != nil {
+		if persistErr := saveRoutedSMSRecord(routedSMSRecord{
+			Identity: routed.Identity, Recipient: req.Phone,
+			Content: req.Message, Status: 3,
+		}); persistErr != nil {
 			logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", persistErr)
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": "发送失败: " + err.Error(),
-			"device":  deviceID,
-			"phone":   req.Phone,
+			"status":      "error",
+			"message":     "发送失败: " + err.Error(),
+			"device":      deviceID,
+			"phone":       req.Phone,
+			"destination": routed.Destination,
 		})
 		return
 	}
@@ -1239,19 +1234,42 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		if routed.FellBackToCS {
 			deliveryState = "acked"
 		}
-		if persistErr := device.SaveSentSMS(snapshot, req.Phone, req.Message, 2, time.Now()); persistErr != nil {
+		if persistErr := saveRoutedSMSRecord(routedSMSRecord{
+			Identity: routed.Identity, Recipient: req.Phone,
+			Content: req.Message, Status: 2,
+		}); persistErr != nil {
 			logger.Warn("短信发送成功但入库失败", "device", deviceID, "err", persistErr)
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":         "ok",
-		"message":        "短信发送成功",
+		"message":        "短信已提交",
 		"device":         deviceID,
 		"phone":          req.Phone,
+		"destination":    routed.Destination,
 		"message_id":     messageID,
 		"parts_total":    partsTotal,
 		"delivery_state": deliveryState,
+	})
+}
+
+type routedSMSRecord struct {
+	Identity  device.SMSIdentity
+	Recipient string
+	Content   string
+	Status    int
+}
+
+func saveRoutedSMSRecord(record routedSMSRecord) error {
+	if strings.TrimSpace(record.Identity.ICCID) == "" || strings.TrimSpace(record.Identity.IMSI) == "" {
+		return db.ErrSMSIdentityUnknown
+	}
+	return db.SaveSMSForIdentity(db.SMSRecord{
+		Identity:   db.SMSIdentity{ICCID: record.Identity.ICCID, IMSI: record.Identity.IMSI},
+		LocalPhone: record.Identity.LocalPhone, ProfileName: record.Identity.ProfileName,
+		Sender: record.Identity.LocalPhone, Recipient: record.Recipient, Content: record.Content,
+		Type: 2, Status: record.Status, Timestamp: time.Now(),
 	})
 }
 
@@ -1281,8 +1299,7 @@ func (s *Server) handleSMSDelivery(c *gin.Context) {
 }
 
 // handleVoWiFiEnable 为指定设备启用 VoWiFi
-func (s *Server) handleVoWiFiEnable(c *gin.Context) {
-	deviceID := deviceIDParam(c)
+func (s *Server) handleVoWiFiEnableLocked(c *gin.Context, deviceID string) {
 	if deviceID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请指定设备 ID"})
 		return
@@ -1318,9 +1335,7 @@ func (s *Server) handleVoWiFiEnable(c *gin.Context) {
 }
 
 // handleVoWiFiDisable 禁用 VoWiFi，保留当前射频/网络状态
-func (s *Server) handleVoWiFiDisable(c *gin.Context) {
-	deviceID := deviceIDParam(c)
-
+func (s *Server) handleVoWiFiDisableLocked(c *gin.Context, deviceID string) {
 	if s.pool == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
 		return

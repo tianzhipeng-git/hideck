@@ -10,7 +10,7 @@ import (
 // smsIdentitySnapshot captures metadata for the supplied card, never the active profile by name.
 func smsIdentitySnapshot(worker *Worker, identity SMSIdentity) SMSIdentity {
 	identity = normalizeSMSIdentity(identity)
-	identity.LocalPhone, _ = db.GetPhoneNumberByIMSIOrICCID(identity.IMSI, identity.ICCID)
+	identity.LocalPhone, _ = db.GetPhoneNumberForSMSIdentity(db.SMSIdentity{ICCID: identity.ICCID, IMSI: identity.IMSI})
 	if worker != nil && worker.EsimMgr != nil {
 		if name, found := worker.EsimMgr.CachedProfileNameForICCID(identity.ICCID); found {
 			identity.ProfileName = name

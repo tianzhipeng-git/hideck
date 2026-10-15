@@ -92,7 +92,7 @@ export function useSmsSending(options: {
       })
       if (!result.ok) throw new Error(result.error.message || '发送失败')
       const parts = result.data.partsTotal
-      ElMessage.success(`短信已发送${parts > 1 ? `（${parts}段）` : ''}`)
+      ElMessage.success(`短信已提交${parts > 1 ? `（${parts}段）` : ''}`)
       showSendModal.value = false
       setTimeout(async () => {
         await fetchMessagesAndThread()

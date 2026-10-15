@@ -74,6 +74,7 @@ func (p *Pool) markQMIControlRecovered(worker *Worker, reason string) {
 }
 
 type modemRebootRecoveryOptions struct {
+	initialWorker          *Worker // Optional ownership guard for an asynchronous reset.
 	deviceID               string
 	reason                 string
 	delays                 []time.Duration
@@ -482,6 +483,20 @@ func (p *Pool) ScheduleModemRebootRecovery(deviceID string, reason string) {
 	go p.runModemRebootRecovery(opts)
 }
 
+// ScheduleModemRebootRecoveryForWorker binds a manually requested reset to the
+// Worker that received it. A replacement with the same ID must not inherit the
+// old modem's recovery loop.
+func (p *Pool) ScheduleModemRebootRecoveryForWorker(worker *Worker, reason string) bool {
+	if p == nil || worker == nil || p.GetWorker(worker.ID) != worker {
+		return false
+	}
+	opts := defaultModemRebootRecoveryOptions(worker.ID, reason)
+	opts.delays = recoveryDelaysForReason(reason)
+	opts.initialWorker = worker
+	go p.runModemRebootRecovery(opts)
+	return true
+}
+
 func (p *Pool) scheduleWorkerRecoveryWithTransportEvent(deviceID string, reason string, event *TransportRecoveryEvent) bool {
 	deviceID = strings.TrimSpace(deviceID)
 	reason = strings.TrimSpace(reason)
@@ -536,46 +551,52 @@ func (p *Pool) scheduleWorkerRecovery(deviceID string, reason string) {
 	p.ScheduleModemRebootRecovery(deviceID, reason)
 }
 
-func (p *Pool) scheduleATDisconnectRecovery(deviceID string, reason string) {
-	deviceID = strings.TrimSpace(deviceID)
+func (p *Pool) scheduleATDisconnectRecovery(owner workerLifecycleOwner, reason string) {
+	if p == nil || owner.worker == nil || !p.workerLifecycleOwnerCurrent(owner) {
+		return
+	}
+	deviceID := strings.TrimSpace(owner.worker.ID)
 	reason = strings.TrimSpace(reason)
-	if p == nil || deviceID == "" {
+	if deviceID == "" {
 		return
 	}
 	if reason == "" {
 		reason = "modem_disconnect"
 	}
-	if worker := p.GetWorker(deviceID); worker != nil {
-		state := HealthStateRecovering
-		if reason == "at_timeout_threshold" {
-			state = HealthStateInvalid
-		}
-		worker.RecordWatchdogEvent(WatchdogEvent{
-			Layer:     HealthLayerAT,
-			State:     state,
-			EventType: reason,
-			Reason:    reason,
-			Threshold: func() int {
-				if reason == "at_timeout_threshold" {
-					return 5
-				}
-				return 0
-			}(),
-		})
-		worker.RecordWatchdogEvent(WatchdogEvent{
-			Layer:     HealthLayerPool,
-			State:     HealthStateReprobing,
-			EventType: "worker_reprobe",
-			Reason:    reason,
-		})
+	worker := owner.worker
+	state := HealthStateRecovering
+	if reason == "at_timeout_threshold" {
+		state = HealthStateInvalid
 	}
+	worker.RecordWatchdogEvent(WatchdogEvent{
+		Layer:     HealthLayerAT,
+		State:     state,
+		EventType: reason,
+		Reason:    reason,
+		Threshold: func() int {
+			if reason == "at_timeout_threshold" {
+				return 5
+			}
+			return 0
+		}(),
+	})
+	worker.RecordWatchdogEvent(WatchdogEvent{
+		Layer:     HealthLayerPool,
+		State:     HealthStateReprobing,
+		EventType: "worker_reprobe",
+		Reason:    reason,
+	})
 	opts := defaultModemRebootRecoveryOptions(deviceID, reason)
 	opts.removeBeforeScan = false
+	opts.initialWorker = worker
 	go p.runModemRebootRecovery(opts)
 }
 
 func (p *Pool) runModemRebootRecovery(opts modemRebootRecoveryOptions) {
 	if p == nil || opts.deviceID == "" {
+		return
+	}
+	if p.adbRecoveryReplaced(opts) {
 		return
 	}
 	generation, started := p.startModemRebootRecovery(opts.deviceID)
@@ -619,8 +640,12 @@ func (p *Pool) runModemRebootRecovery(opts modemRebootRecoveryOptions) {
 		p.lifecycle.BeginRecovery(opts.deviceID, LifecyclePhaseUSBWait, opts.reason, qmiLifecycleRecoveryTTL)
 	}
 	if opts.removeBeforeScan {
-		if err := p.RemoveWorker(opts.deviceID); err != nil {
+		if err := p.removeInitialRecoveryWorker(opts); err != nil {
 			logger.Debug("模组重启恢复：旧 Worker 已不存在", "device", opts.deviceID, "err", err)
+			if opts.initialWorker != nil {
+				logger.Warn("ADB 重启恢复停止，未继续替换 Worker", "device", opts.deviceID, "err", err)
+				return
+			}
 		}
 	}
 	for round, delay := range opts.delays {
@@ -633,6 +658,9 @@ func (p *Pool) runModemRebootRecovery(opts modemRebootRecoveryOptions) {
 			return
 		}
 		p.waitModemRebootRecoveryTrigger(opts.deviceID, delay)
+		if !opts.removeBeforeScan && p.adbRecoveryReplaced(opts) {
+			return
+		}
 		if p.ctx.Err() != nil || !p.modemRebootRecoveryStillCurrent(opts.deviceID, generation) {
 			return
 		}
@@ -672,7 +700,7 @@ func (p *Pool) runModemRebootRecovery(opts modemRebootRecoveryOptions) {
 		} else {
 			err = p.rescanAndReconnect(rescanReconnectOptions{
 				targetDeviceID: opts.deviceID,
-				manualReboot:   strings.TrimSpace(opts.reason) == "manual_reboot",
+				manualReboot:   strings.TrimSpace(opts.reason) == "manual_reboot" || opts.reason == modemADBRebootReason,
 			})
 		}
 		if err != nil {
@@ -740,11 +768,12 @@ func (p *Pool) runModemRebootRecovery(opts modemRebootRecoveryOptions) {
 			logger.Info("模组重启恢复成功", "device", opts.deviceID, "round", round+1)
 			p.markQMIControlRecovered(worker, opts.reason)
 			if hadVoWiFi {
-				go func(deviceID string) {
-					if err := p.enableVoWiFiWhenReady(deviceID, 5*time.Second, opts.reason); err != nil {
-						logger.Warn("模组重启恢复后恢复 VoWiFi 失败", "device", deviceID, "err", err)
+				start := p.captureVoWiFiReadyStart(worker)
+				go func() {
+					if err := p.enableVoWiFiWhenReady(start, 5*time.Second, opts.reason); err != nil {
+						logger.Warn("模组重启恢复后恢复 VoWiFi 失败", "device", opts.deviceID, "err", err)
 					}
-				}(opts.deviceID)
+				}()
 			}
 			return
 		}
