@@ -54,12 +54,12 @@ export function useSmsWorkspace() {
     if (!q) return threads.value
     return threads.value.filter(t => {
       if (t.peerLower.includes(q)) return true
-      return t.lastMessageLower.includes(q) || (t.localPhone || '').includes(q) || (t.profileName || '').toLowerCase().includes(q) || t.iccid.includes(q)
+      return t.lastMessageLower.includes(q) || (t.localPhone || cards.value.find(card => card.iccid === t.iccid)?.local_phone || '').includes(q) || (t.profileName || '').toLowerCase().includes(q) || t.iccid.includes(q)
     })
   })
 
   const presentedThreads = computed(() => {
-    return filteredThreads.value
+    return filteredThreads.value.map(thread => ({ ...thread, localPhone: thread.localPhone || cards.value.find(card => card.iccid === thread.iccid)?.local_phone || '' }))
   })
 
   const selectedThread = computed(() => {

@@ -37,3 +37,10 @@ test('unread badges and initials are explicit and bounded', () => {
   assert.equal(smsPeerInitial(''), '—')
   assert.equal(normalizeSmsUnreadCount(undefined), 0)
 })
+
+test('conversation uses the card number when its historical number is unknown', () => {
+  const context = createSmsConversationContext({ thread: { iccid: '8944000011', localPhone: '' }, cards: [card('8944000011')] })
+  assert.match(context.identityLabel, /447700900011/)
+  const other = createSmsConversationContext({ thread: { iccid: '8944000022' }, cards: [card('8944000011')] })
+  assert.match(other.identityLabel, /号码未知/)
+})

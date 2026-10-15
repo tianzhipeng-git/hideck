@@ -71,7 +71,7 @@ test('narrow SMS workspace keeps all three panes visible in the prototype compos
 test('unread presentation and history failures stay explicit', () => {
   assert.match(smsService, /unreadCount: normalizeSmsUnreadCount\(contact\.unread_count\)/)
   assert.match(smsView, /:items="presentedThreads"/)
-  assert.match(smsView, /const presentedThreads = computed\(\(\) => \{\s*return filteredThreads\.value\s*\}\)/)
+  assert.match(smsView, /const presentedThreads = computed\(\(\) => \{\s*return filteredThreads\.value\.map\(/)
   assert.doesNotMatch(smsView, /sms_thread_last_seen|localStorage/)
   assert.match(smsView, /messagesError\.value = result\.error/)
   assert.match(smsView, /messagesError\.value = toAppError\(error\)/)

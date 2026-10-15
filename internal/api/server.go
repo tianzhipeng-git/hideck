@@ -426,6 +426,8 @@ func (s *Server) newRouter() *gin.Engine {
 		api.PATCH("/devices/:device_id/network", s.handleDeviceNetworkPatch)
 
 		api.GET("/cards/policies", s.handleListCardPolicies)
+		api.GET("/cards/phone-notes", s.handleGetProfilePhoneNotes)
+		api.PUT("/cards/:iccid/phone-note", s.handlePutProfilePhoneNote)
 		api.GET("/cards/:iccid/policy", s.handleGetCardPolicy)
 		api.PUT("/cards/:iccid/policy", s.handlePutCardPolicy)
 

@@ -41,8 +41,15 @@ func (s *Server) smsCards() ([]smsCardView, error) {
 			byICCID[identity.ICCID] = card
 		}
 	}
+	notes, err := db.GetProfilePhoneNotes()
+	if err != nil {
+		return nil, err
+	}
 	cards := make([]smsCardView, 0, len(byICCID))
 	for _, card := range byICCID {
+		if card.LocalPhone == "" {
+			card.LocalPhone = notes[card.ICCID]
+		}
 		row := smsCardView{SMSCard: card, SendReason: "卡未激活或设备离线，仍可查看历史"}
 		if s.pool != nil {
 			worker, _, _ := s.resolveSMSWorkerByICCID(card.ICCID)

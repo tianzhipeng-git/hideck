@@ -42,7 +42,7 @@ export function createSmsConversationContext(options: Readonly<{
 }>): SmsConversationContext {
   const card = options.cards.find(card => card.iccid === options.thread?.iccid)
   return {
-    identityLabel: options.thread ? smsIdentityLabel(options.thread) : '选择本方卡与对方号码的会话',
+    identityLabel: options.thread ? smsIdentityLabel({ ...options.thread, localPhone: options.thread.localPhone || card?.local_phone }) : '选择本方卡与对方号码的会话',
     deviceLabel: card?.device_name || '',
     canSend: card?.can_send === true,
     sendLabel: card?.send_reason || '卡未激活或设备离线，仍可查看历史'

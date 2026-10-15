@@ -39,6 +39,56 @@ tags:
   - name: phone
     description: VoWiFi 浏览器实时电话、媒体、事件与录音
 paths:
+  /cards/phone-notes:
+    get:
+      tags: [esim]
+      summary: 读取按 ICCID 保存的备注号码
+      responses:
+        '200':
+          description: ICCID 到备注号码的映射，与自动获取号码独立存储
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+  /cards/{iccid}/phone-note:
+    put:
+      tags: [esim]
+      summary: 保存或清除 profile 的备注号码
+      parameters:
+        - in: path
+          name: iccid
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manual_phone_number]
+              properties:
+                manual_phone_number:
+                  type: string
+                  description: 6–15 位电话号码，可带国际区号；空字符串清除备注
+      responses:
+        '200':
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  iccid:
+                    type: string
+                  manual_phone_number:
+                    type: string
+        '400':
+          description: 缺少字段或电话号码格式无效
+        '500':
+          description: 保存失败
   /docs:
     get:
       tags: [settings]
