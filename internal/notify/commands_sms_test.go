@@ -36,7 +36,7 @@ func newRoutedSMSTestPool(t *testing.T) (*device.Pool, *device.Worker) {
 		t.Fatalf("UpsertSIMCard() error=%v", err)
 	}
 	pool := device.NewPool(&config.Config{})
-	worker := &device.Worker{ID: "wwan0", Config: config.DeviceConfig{
+	worker := &device.Worker{ID: "wwan0", Pool: pool, Config: config.DeviceConfig{
 		ID: "wwan0", VoWiFiEnabled: true, PhoneMode: "wifi",
 	}}
 	pool.AttachWorkerForTest(worker)

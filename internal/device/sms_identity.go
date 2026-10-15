@@ -18,8 +18,10 @@ var (
 )
 
 type SMSIdentity struct {
-	ICCID string
-	IMSI  string
+	LocalPhone  string
+	ProfileName string
+	ICCID       string
+	IMSI        string
 }
 
 type inboundSMSRecord struct {
@@ -48,14 +50,19 @@ func (databaseSMSIdentityStore) LookupDeviceIdentity(selector db.SMSDeviceSelect
 
 func (databaseSMSIdentityStore) SaveReceived(identity SMSIdentity, message inboundSMSRecord) error {
 	return db.SaveSMSForIdentity(db.SMSRecord{
-		Identity: db.SMSIdentity{ICCID: identity.ICCID, IMSI: identity.IMSI},
-		Sender:   message.Sender, Content: message.Content,
+		Identity:   db.SMSIdentity{ICCID: identity.ICCID, IMSI: identity.IMSI},
+		LocalPhone: identity.LocalPhone, ProfileName: identity.ProfileName,
+		Sender: message.Sender, Content: message.Content,
 		Type: 1, Status: 0, Timestamp: message.Timestamp,
 	})
 }
 
 func (p *Pool) ResolveSMSIdentity(deviceID string) (SMSIdentity, error) {
-	return p.resolveSMSIdentity(deviceID, true)
+	identity, err := p.resolveSMSIdentity(deviceID, true)
+	if err != nil {
+		return SMSIdentity{}, err
+	}
+	return smsIdentitySnapshot(p.GetWorker(deviceID), identity), nil
 }
 
 func (p *Pool) ResolveSMSICCID(deviceID string) (string, error) {

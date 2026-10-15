@@ -39,6 +39,56 @@ tags:
   - name: phone
     description: VoWiFi 浏览器实时电话、媒体、事件与录音
 paths:
+  /cards/phone-notes:
+    get:
+      tags: [esim]
+      summary: 读取按 ICCID 保存的备注号码
+      responses:
+        '200':
+          description: ICCID 到备注号码的映射，与自动获取号码独立存储
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+  /cards/{iccid}/phone-note:
+    put:
+      tags: [esim]
+      summary: 保存或清除 profile 的备注号码
+      parameters:
+        - in: path
+          name: iccid
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manual_phone_number]
+              properties:
+                manual_phone_number:
+                  type: string
+                  description: 6–15 位电话号码，可带国际区号；空字符串清除备注
+      responses:
+        '200':
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  iccid:
+                    type: string
+                  manual_phone_number:
+                    type: string
+        '400':
+          description: 缺少字段或电话号码格式无效
+        '500':
+          description: 保存失败
   /mbn/files:
     get:
       tags: [devices]
@@ -522,11 +572,37 @@ paths:
         '500':
           $ref: '#/components/responses/ErrorMessage'
 
+  /sms/cards:
+    get:
+      tags: [sms]
+      summary: 所有历史卡及当前可用卡的身份与发送状态
+      responses:
+        '200':
+          description: 卡列表；历史可见性不受当前激活状态影响
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SMSCard'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
   /sms/contacts:
     get:
       tags: [sms]
       summary: 短信联系人会话列表
       parameters:
+        - in: query
+          name: iccid
+          description: 本方卡 ICCID，历史查询不依赖激活状态
+          schema:
+            type: string
+        - in: query
+          name: before_iccid
+          description: 与 before_ts、before_peer 一起构成完整分页游标
+          schema:
+            type: string
         - in: query
           name: device_id
           schema:
@@ -4855,9 +4931,31 @@ components:
           type: object
           additionalProperties: true
 
+    SMSCard:
+      type: object
+      properties:
+        iccid:
+          type: string
+        local_phone:
+          type: string
+        profile_name:
+          type: string
+        device_id:
+          type: string
+        device_name:
+          type: string
+        can_send:
+          type: boolean
+        send_reason:
+          type: string
+
     SMSMessage:
       type: object
       properties:
+        iccid:
+          type: string
+        profile_name:
+          type: string
         id:
           type: integer
         imsi:
@@ -4885,6 +4983,8 @@ components:
     SMSContact:
       type: object
       properties:
+        profile_name:
+          type: string
         imsi:
           type: string
         iccid:

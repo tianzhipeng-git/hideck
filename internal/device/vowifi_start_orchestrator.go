@@ -113,6 +113,9 @@ func (p *Pool) PrepareStart(deviceID, traceID, runtimeEPDGOverride string) (vowi
 	}
 	prepared := startCtx.PreparedStart
 	prepared.Modem = startCtx.modem
+	worker := p.GetWorker(deviceID)
+	identity := smsIdentitySnapshot(worker, SMSIdentity{IMSI: prepared.Profile.IMSI, ICCID: worker.CurrentICCID()})
+	prepared.Dispatch = poolVoWiFiRuntimeDispatcher{pool: p, identity: &identity}
 	return prepared, nil
 }
 

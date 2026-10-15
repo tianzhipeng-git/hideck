@@ -29,7 +29,7 @@ test('legacy IMSI thread keys resolve only when the ICCID thread is unique', () 
 })
 
 test('SMS view does not override persistent unread state with browser localStorage', () => {
-  const source = fs.readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8')
+  const source = fs.readFileSync(new URL('../src/views/Sms.vue', import.meta.url), 'utf8') + fs.readFileSync(new URL('../src/composables/useSmsWorkspace.ts', import.meta.url), 'utf8') + fs.readFileSync(new URL('../src/composables/useSmsSending.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(source, /sms_thread_last_seen|localStorage/)
   assert.match(source, /smsStore\.send\(\{ iccid: t\.iccid, phone: t\.peer, message: text \}\)/)
   assert.doesNotMatch(source, /smsStore\.send\(\{ imsi: t\.imsi/)

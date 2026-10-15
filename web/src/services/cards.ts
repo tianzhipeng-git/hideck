@@ -14,6 +14,14 @@ type PutCardPolicyRequest = {
 }
 
 export const cardsService = {
+  getPhoneNotes() {
+    return callService(async () => (await api.get<Record<string, string>>('/cards/phone-notes')).data)
+  },
+  putPhoneNote(iccid: string, manualPhoneNumber: string) {
+    return callService(async () => (await api.put<{ iccid: string; manual_phone_number: string }>(
+      `/cards/${encodeURIComponent(iccid)}/phone-note`, { manual_phone_number: manualPhoneNumber }
+    )).data)
+  },
   getPolicy(iccid: string) {
     return callService(async () => {
       const res = await api.get<CardPolicy>(`/cards/${iccid}/policy`)

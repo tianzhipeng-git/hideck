@@ -277,7 +277,7 @@ const activeMenuItem = computed(() => menuItems.value.find((item) => item.index 
         <div class="main-inner mx-auto w-full">
           <router-view v-slot="{ Component, route: r }">
             <ErrorBoundary v-if="Component" title="页面渲染失败">
-              <component :is="Component" :key="r.fullPath" />
+              <component :is="Component" :key="r.name === 'SMS' ? r.path : r.fullPath" />
             </ErrorBoundary>
             <LoadingScreen v-else :title="t('common.loadingPage')" :subtitle="t('common.loadingPageHint')" />
           </router-view>

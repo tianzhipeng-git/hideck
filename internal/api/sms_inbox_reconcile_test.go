@@ -26,7 +26,7 @@ func TestSMSThreadReturnsReconciledMultipartMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := db.ReceivedMultipartSMS{
-		IMSI: imsi, Sender: "giffgaff", Recipient: "+447840844894",
+		ICCID: "ICCID-API-FRAGMENT", IMSI: imsi, Sender: "giffgaff", Recipient: "+447840844894",
 		LocalPhone: "+447840844894", FragmentSessionKey: "api-fragment-session",
 		Content: "[incomplete 1/2 missing=2] first", Timestamp: time.Now(), Incomplete: true,
 	}

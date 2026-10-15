@@ -81,13 +81,22 @@ func (m *Manager) handleCmdSendSMS(cmdCtx CommandContext, args []string) string 
 		routed, sendErr := m.pool.SendRoutedSMS(ctx, worker, phone, message, smscodec.SubmitOptions{})
 		channel := smsRouteChannelLabel(routed.Via)
 		if sendErr != nil {
+			if routed.IdentityRead {
+				if err := device.RecordVoWiFiSMSSendFailure(m.pool, device.VoWiFiSMSSendFailure{
+					DeviceID: deviceID, Target: phone, Content: message,
+					Identity: routed.Identity, IdentityRead: routed.IdentityRead, At: time.Now(),
+				}); err != nil {
+					logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", err)
+				}
+			}
 			cmdCtx.Reply(fmt.Sprintf("发送短信 / 失败\n设备    %s\n号码    %s\n通道    %s\n原因    %v", displayName, phone, channel, sendErr))
 			return
 		}
 		if routed.Via == device.RoutedSMSViaCS {
 			err := db.SaveSMSForIdentity(db.SMSRecord{
-				Identity: db.SMSIdentity{ICCID: routed.Identity.ICCID, IMSI: routed.Identity.IMSI},
-				Sender:   worker.ID, Recipient: phone, Content: message,
+				Identity:   db.SMSIdentity{ICCID: routed.Identity.ICCID, IMSI: routed.Identity.IMSI},
+				LocalPhone: routed.Identity.LocalPhone, ProfileName: routed.Identity.ProfileName,
+				Sender: routed.Identity.LocalPhone, Recipient: phone, Content: message,
 				Type: 2, Status: 2, Timestamp: time.Now(),
 			})
 			if err != nil {

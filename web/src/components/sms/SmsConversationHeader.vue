@@ -30,14 +30,13 @@ const emit = defineEmits<{
       </button>
       <div class="sms-conversation-copy">
         <strong>{{ peer || '请选择会话' }}</strong>
-        <span>{{ context.deviceLabel }} · {{ context.operatorLabel }}</span>
+        <span :title="context.identityLabel">本方：{{ context.identityLabel }}</span>
       </div>
     </div>
 
     <div v-if="peer" class="sms-context-and-actions">
       <div class="sms-runtime-facts" aria-label="短信运行状态">
-        <span :class="`is-${context.smsTone}`">{{ context.smsLabel }}</span>
-        <span :class="`is-${context.imsTone}`">{{ context.imsLabel }}</span>
+        <span :class="context.canSend ? 'is-success' : 'is-muted'">{{ context.canSend ? '当前可发送' : '历史会话' }}</span>
       </div>
       <nav aria-label="会话操作">
         <button type="button" class="sms-header-icon" :disabled="loading" aria-label="刷新会话" title="刷新" @click="emit('refresh')">

@@ -70,7 +70,7 @@ func (r ProbeResult) FailureSummary() string {
 	return strings.Join(parts, "；")
 }
 
-func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
+func probeSOCKS5Session(ctx context.Context, cfg ProbeConfig, requests []udpProbeRequest) (ProbeResult, error) {
 	startedAt := time.Now()
 	result := ProbeResult{
 		ProxyAddr: strings.TrimSpace(cfg.ProxyAddr),
@@ -96,6 +96,8 @@ func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
 		return finalizeProbeResult(result, startedAt), err
 	}
 	defer conn.Close()
+	stopControl := context.AfterFunc(probeCtx, func() { _ = conn.Close() })
+	defer stopControl()
 
 	result.Reachable = true
 	if err := conn.SetDeadline(deadline); err != nil {
@@ -119,6 +121,8 @@ func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
 		return finalizeProbeResult(result, startedAt), err
 	}
 	defer udpConn.Close()
+	stopUDP := context.AfterFunc(probeCtx, func() { _ = udpConn.Close() })
+	defer stopUDP()
 
 	relayAddr, err := probeUDPAssociate(probeCtx, conn, udpConn.LocalAddr().(*net.UDPAddr))
 	if err != nil {
@@ -129,7 +133,7 @@ func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
 	result.RelayAddr = relayAddr.String()
 	result.Stage = ProbeStageUDPRelay
 
-	target, err := probeUDPRelay(probeCtx, udpConn, relayAddr, cfg.UDPProbeTargets, deadline)
+	target, err := probeUDPRelay(probeCtx, udpConn, relayAddr, requests, deadline)
 	if err != nil {
 		result.Error = err.Error()
 		return finalizeProbeResult(result, startedAt), err

@@ -6,6 +6,8 @@ import { devicesService } from '../services/devices'
 import { errorMessage } from '../services/http'
 import { api } from '../stores/auth'
 import { useSensitiveVisibility } from '../composables/useSensitiveVisibility'
+import ProfilePhoneNote from './ProfilePhoneNote.vue'
+import { useProfilePhoneNotes } from '../composables/useProfilePhoneNotes'
 import EsimCardPolicyInline from './EsimCardPolicyInline.vue'
 import { applyOptimisticActiveState } from './deviceEsimOptimistic'
 import { esimProfileActionForState } from './deviceEsimProfileAction'
@@ -38,6 +40,8 @@ import {
   Image24Regular,
   QrCode24Regular
 } from '@vicons/fluent'
+
+const { phoneNotes, phoneNotesReady, loadPhoneNotes, phoneNoteKey } = useProfilePhoneNotes()
 
 const props = defineProps<{
   deviceId: string
@@ -762,6 +766,7 @@ onBeforeUnmount(() => {
                 <el-button size="small" @click="cancelRename" class="!border-0">取消</el-button>
               </div>
             </template>
+            <ProfilePhoneNote :iccid="p.iccid" :model-value="phoneNotes[phoneNoteKey(p.iccid)] || ''" :ready="phoneNotesReady" :show-sensitive="showSensitive" @update:model-value="value => phoneNotes[phoneNoteKey(p.iccid)] = value" @retry="loadPhoneNotes" />
           </div>
 
           <!-- 操作按钮 -->

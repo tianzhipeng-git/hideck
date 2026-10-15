@@ -15,6 +15,7 @@ const (
 )
 
 type ReceivedMultipartSMS struct {
+	ProfileName        string
 	ICCID              string
 	IMSI               string
 	LocalPhone         string
@@ -126,9 +127,10 @@ func createReceivedMultipartSMS(
 ) (ReceivedMultipartSMSResult, error) {
 	sms := SMS{
 		IMSI: input.IMSI, ICCID: input.ICCID,
-		Peer:       normalizeSMSPeer(1, input.Sender, input.Recipient),
-		LocalPhone: input.LocalPhone,
-		Sender:     input.Sender, Recipient: input.Recipient, Content: input.Content,
+		ProfileName: strings.TrimSpace(input.ProfileName),
+		Peer:        normalizeSMSPeer(1, input.Sender, input.Recipient),
+		LocalPhone:  input.LocalPhone,
+		Sender:      input.Sender, Recipient: input.Recipient, Content: input.Content,
 		Type: 1, Status: 0, Timestamp: input.Timestamp.Truncate(time.Second),
 		FragmentSessionKey: input.FragmentSessionKey, Incomplete: input.Incomplete,
 	}

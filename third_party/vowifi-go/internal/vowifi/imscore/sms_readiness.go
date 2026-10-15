@@ -123,6 +123,7 @@ func (s *Service) setSMSReceiverReady(ready bool) {
 	}
 	readiness := s.SMSReadiness()
 	s.logSMSReadinessChange(readiness)
+	s.logSMSReadinessDiagnostic("readiness_notify", "observer_present", callback != nil)
 	if callback != nil {
 		callback(readiness)
 	}
@@ -138,6 +139,7 @@ func (s *Service) notifySMSReadiness() {
 	s.maybeNotifySMSReady(smsReadyReasonReady)
 	readiness := s.SMSReadiness()
 	s.logSMSReadinessChange(readiness)
+	s.logSMSReadinessDiagnostic("readiness_notify", "observer_present", callback != nil)
 	if callback != nil {
 		callback(readiness)
 	}

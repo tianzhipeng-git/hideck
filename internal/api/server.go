@@ -346,6 +346,7 @@ func (s *Server) newRouter() *gin.Engine {
 		// ===== 短信 =====
 		api.POST("/sms/send", s.handleSendSMS)                    // 发送短信（自动选择 AT 或 VoWiFi）
 		api.GET("/sms/delivery/:message_id", s.handleSMSDelivery) // 查询发送投递状态
+		api.GET("/sms/cards", s.handleGetSMSCards)
 		api.GET("/sms/contacts", s.handleGetSMSContacts)          // 获取短信联系人列表
 		api.GET("/sms/notifications", s.handleSMSNotifications)   // 全局未读数量与增量来信提醒
 		api.GET("/sms/events", s.handleSMSEvents)                 // 来信 SSE，Last-Event-ID / after_id 补发未读
@@ -407,6 +408,8 @@ func (s *Server) newRouter() *gin.Engine {
 		api.PATCH("/devices/:device_id/network", s.handleDeviceNetworkPatch)
 
 		api.GET("/cards/policies", s.handleListCardPolicies)
+		api.GET("/cards/phone-notes", s.handleGetProfilePhoneNotes)
+		api.PUT("/cards/:iccid/phone-note", s.handlePutProfilePhoneNote)
 		api.GET("/cards/:iccid/policy", s.handleGetCardPolicy)
 		api.PUT("/cards/:iccid/policy", s.handlePutCardPolicy)
 
@@ -1213,7 +1216,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 			return
 		}
 		if persistErr := saveRoutedSMSRecord(routedSMSRecord{
-			Identity: routed.Identity, Sender: worker.ID, Recipient: req.Phone,
+			Identity: routed.Identity, Recipient: req.Phone,
 			Content: req.Message, Status: 3,
 		}); persistErr != nil {
 			logger.Warn("短信发送失败记录入库失败", "device", deviceID, "err", persistErr)
@@ -1232,7 +1235,7 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 			deliveryState = "acked"
 		}
 		if persistErr := saveRoutedSMSRecord(routedSMSRecord{
-			Identity: routed.Identity, Sender: worker.ID, Recipient: req.Phone,
+			Identity: routed.Identity, Recipient: req.Phone,
 			Content: req.Message, Status: 2,
 		}); persistErr != nil {
 			logger.Warn("短信发送成功但入库失败", "device", deviceID, "err", persistErr)
@@ -1253,7 +1256,6 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 
 type routedSMSRecord struct {
 	Identity  device.SMSIdentity
-	Sender    string
 	Recipient string
 	Content   string
 	Status    int
@@ -1264,8 +1266,9 @@ func saveRoutedSMSRecord(record routedSMSRecord) error {
 		return db.ErrSMSIdentityUnknown
 	}
 	return db.SaveSMSForIdentity(db.SMSRecord{
-		Identity: db.SMSIdentity{ICCID: record.Identity.ICCID, IMSI: record.Identity.IMSI},
-		Sender:   record.Sender, Recipient: record.Recipient, Content: record.Content,
+		Identity:   db.SMSIdentity{ICCID: record.Identity.ICCID, IMSI: record.Identity.IMSI},
+		LocalPhone: record.Identity.LocalPhone, ProfileName: record.Identity.ProfileName,
+		Sender: record.Identity.LocalPhone, Recipient: record.Recipient, Content: record.Content,
 		Type: 2, Status: record.Status, Timestamp: time.Now(),
 	})
 }
@@ -1429,73 +1432,6 @@ func (s *Server) handleStatusDetail(c *gin.Context) {
 	response["vowifi"] = vowifi
 
 	c.JSON(http.StatusOK, response)
-}
-
-type SMSContactWithDevice struct {
-	db.SMSContact
-	DeviceID   string `json:"device_id"`
-	DeviceName string `json:"device_name"`
-	LocalPhone string `json:"local_phone"` // 本机号码（收件人手机号），来自订阅手机号
-}
-
-func (s *Server) handleGetSMSContacts(c *gin.Context) {
-	deviceID := c.Query("device_id")
-	imsi := c.Query("imsi")
-
-	limitStr := c.DefaultQuery("limit", "50")
-	var limit int
-	fmt.Sscanf(limitStr, "%d", &limit)
-
-	var beforeTs *time.Time
-	if v := strings.TrimSpace(c.Query("before_ts")); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			beforeTs = &t
-		}
-	}
-	beforePeer := strings.TrimSpace(c.Query("before_peer"))
-
-	var iccid string
-	if strings.TrimSpace(deviceID) != "" {
-		resolved, status, msg := s.resolveSMSICCID(deviceID, imsi)
-		if status != 0 {
-			c.JSON(status, gin.H{"status": "error", "message": msg})
-			return
-		}
-		iccid = resolved
-	}
-
-	var contacts []db.SMSContact
-	var err error
-	if iccid != "" {
-		contacts, err = db.GetSMSContactsByICCID(iccid, limit, beforeTs, beforePeer)
-	} else {
-		contacts, err = db.GetSMSContacts(limit, beforeTs, beforePeer)
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "查询数据库失败: " + err.Error()})
-		return
-	}
-
-	iccidDevice := s.smsDeviceInfoByICCID()
-
-	// 手机号仍通过 IMSI 从 sim_subscriptions 查询（sim_subscriptions 主键尚为 IMSI）。
-	imsiPhone := make(map[string]string)
-	if phones, err := db.GetSIMPhoneNumbersByIMSI(); err == nil {
-		imsiPhone = phones
-	}
-
-	enriched := make([]SMSContactWithDevice, 0, len(contacts))
-	for _, ct := range contacts {
-		info := iccidDevice[ct.ICCID]
-		enriched = append(enriched, SMSContactWithDevice{
-			SMSContact: ct,
-			DeviceID:   info.id,
-			DeviceName: info.name,
-			LocalPhone: imsiPhone[ct.IMSI],
-		})
-	}
-
-	c.JSON(http.StatusOK, enriched)
 }
 
 func (s *Server) handleGetSMSThread(c *gin.Context) {

@@ -19,6 +19,7 @@ export type SmsThreadVM = {
   lastMessage: string
   lastDeviceName?: string
   localPhone?: string
+  profileName?: string
   unreadCount: number
   peerLower: string
   lastMessageLower: string

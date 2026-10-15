@@ -184,12 +184,24 @@ func (s *Service) dispatchInboundSIPMessageWithPeer(
 	case *sip.Request:
 		s.inboundSIPParsedRequest.Add(1)
 		checkpoint, currentPeer := s.captureInboundDownlink(peer)
+		path := s.inboundDiagnosticPath(peer)
 		err := s.dispatchInboundSIPRequest(parsed, raw, reply, peer)
 		if err == nil {
 			s.inboundSIPHandledRequest.Add(1)
 			if currentPeer {
 				s.recordCurrentDownlinkRequest(peer, checkpoint)
 			}
+		}
+		// MESSAGE includes both incoming SMS and SMS control reports. A handled
+		// SIP request alone does not assert delivery of a user-visible SMS.
+		if parsed.Method == sip.MESSAGE {
+			after, stillCurrent := s.captureInboundDownlink(peer)
+			s.logSMSReadinessDiagnostic("inbound_message",
+				"inbound_path", path, "handler_ok", err == nil,
+				"peer_current_before", currentPeer, "peer_current_after", stillCurrent,
+				"same_path_after", checkpoint.samePath(after),
+				"source_pcscf", checkpoint.registrar,
+				"source_downlink_generation", checkpoint.generation)
 		}
 		return err
 	default:

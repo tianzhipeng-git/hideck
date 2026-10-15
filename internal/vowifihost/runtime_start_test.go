@@ -6,8 +6,13 @@ import (
 	"time"
 
 	"github.com/iniwex5/vowifi-go/runtimehost"
+	"github.com/iniwex5/vowifi-go/runtimehost/eventhost"
 	"github.com/iniwex5/vowifi-go/runtimehost/identity"
 )
+
+type runtimeStartSMSDispatcher struct{}
+
+func (*runtimeStartSMSDispatcher) Dispatch(context.Context, eventhost.Event) {}
 
 type runtimeStartTestModem struct{}
 
@@ -46,6 +51,7 @@ func TestManagerStartRuntimeBuildsRequestAndClaimsInstance(t *testing.T) {
 		t.Fatalf("BeginStart() = %+v, want accepted", claim)
 	}
 	wantInst := &runtimehost.Instance{}
+	boundDispatcher := &runtimeStartSMSDispatcher{}
 	var captured runtimehost.StartRequest
 	manager.SetRuntimeStartForTest(func(ctx context.Context, req runtimehost.StartRequest) (*runtimehost.Instance, error) {
 		captured = req
@@ -60,8 +66,9 @@ func TestManagerStartRuntimeBuildsRequestAndClaimsInstance(t *testing.T) {
 		TraceID:  "trace-1",
 		Epoch:    claim.Epoch,
 		Prepared: PreparedStart{
-			Profile: identity.Profile{IMSI: "001010000000001"},
-			SIM:     runtimehost.NewReaderSIMAdapter(simProviderStub{}),
+			Dispatch: boundDispatcher,
+			Profile:  identity.Profile{IMSI: "001010000000001"},
+			SIM:      runtimehost.NewReaderSIMAdapter(simProviderStub{}),
 			Prepared: identity.PreparedSession{
 				Profile: identity.Profile{IMSI: "001010000000001"},
 			},
@@ -81,6 +88,9 @@ func TestManagerStartRuntimeBuildsRequestAndClaimsInstance(t *testing.T) {
 	}
 	if captured.Mode != runtimehost.StartModeMain || captured.DeviceID != deviceID || captured.TraceID != "trace-1" {
 		t.Fatalf("captured request identity = mode %q device %q trace %q", captured.Mode, captured.DeviceID, captured.TraceID)
+	}
+	if captured.Dispatch != boundDispatcher {
+		t.Fatal("runtime must use the session-bound SMS dispatcher")
 	}
 	if captured.SIM == nil || captured.Access == nil {
 		t.Fatal("captured request should include SIM and Access adapters")

@@ -30,7 +30,7 @@ func (s *Server) handleSMSMessageTarget(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{
 		"message":  SMSWithDevice{SMS: result.Message, DeviceName: info.name},
-		"contact":  SMSContactWithDevice{SMSContact: result.Contact, DeviceID: info.id, DeviceName: info.name},
+		"contact":  SMSContactWithDevice{SMSContact: result.Contact, DeviceID: info.id, DeviceName: info.name, LocalPhone: result.Message.LocalPhone, ProfileName: result.Message.ProfileName},
 		"messages": result.Messages, "has_more": result.HasMore,
 	})
 }

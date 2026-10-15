@@ -20,14 +20,15 @@ type SMSIdentity struct {
 }
 
 type SMSRecord struct {
-	Identity   SMSIdentity
-	LocalPhone string
-	Sender     string
-	Recipient  string
-	Content    string
-	Type       int
-	Status     int
-	Timestamp  time.Time
+	ProfileName string
+	Identity    SMSIdentity
+	LocalPhone  string
+	Sender      string
+	Recipient   string
+	Content     string
+	Type        int
+	Status      int
+	Timestamp   time.Time
 }
 
 // SMSDeviceSelector pins a lookup to the physical modem when its IMEI is known.
@@ -137,7 +138,8 @@ func SaveSMSForIdentity(input SMSRecord) error {
 	recipient := strings.TrimSpace(input.Recipient)
 	sms := SMS{
 		IMSI: input.Identity.IMSI, ICCID: input.Identity.ICCID,
-		Peer: normalizeSMSPeer(input.Type, sender, recipient),
+		ProfileName: strings.TrimSpace(input.ProfileName),
+		Peer:        normalizeSMSPeer(input.Type, sender, recipient),
 		LocalPhone: normalizeSMSLocalPhoneForIdentity(smsLocalPhoneInput{
 			Identity: input.Identity, Type: input.Type,
 			LocalPhone: input.LocalPhone, Sender: sender, Recipient: recipient,

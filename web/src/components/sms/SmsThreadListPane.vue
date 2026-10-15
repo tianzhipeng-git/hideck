@@ -4,7 +4,7 @@ import { Add24Regular, Delete24Regular, Mail24Regular, Search24Regular } from '@
 import { RecycleScroller } from 'vue-virtual-scroller'
 import type { SmsThreadVM } from '../../types/view-model'
 import { formatDeviceTime } from '../../utils/deviceTime'
-import { smsPeerInitial, smsUnreadBadge } from '../../utils/smsPresentation'
+import { smsIdentityLabel, smsPeerInitial, smsUnreadBadge } from '../../utils/smsPresentation'
 import EmptyState from '../EmptyState.vue'
 import ListSkeleton from '../ListSkeleton.vue'
 
@@ -73,7 +73,7 @@ onUnmounted(clearLongPress)
     <header class="sms-thread-toolbar">
       <el-input
         :model-value="modelValue"
-        placeholder="搜索联系人/内容"
+        placeholder="搜索对方、本方号码或内容"
         clearable
         aria-label="搜索短信会话"
         @update:model-value="updateSearch"
@@ -97,7 +97,7 @@ onUnmounted(clearLongPress)
     <RecycleScroller
       v-else
       :items="scrollerItems"
-      :item-size="82"
+      :item-size="112"
       key-field="key"
       class="sms-thread-scroll"
     >
@@ -120,10 +120,11 @@ onUnmounted(clearLongPress)
             <span class="sms-thread-copy">
               <strong>{{ thread.peer || '未知联系人' }}</strong>
               <small>{{ thread.lastMessage || '暂无短信内容' }}</small>
+              <small class="sms-thread-identity" :title="smsIdentityLabel(thread)">本方：{{ thread.localPhone || '号码未知' }}<br />尾号 {{ thread.iccid.slice(-6) }} · {{ thread.profileName || 'SIM' }}</small>
             </span>
             <span class="sms-thread-meta">
               <time>{{ formatDeviceTime(thread.lastTs, { fallback: '时间未知' }) }}</time>
-              <small>{{ thread.localPhone || thread.lastDeviceName || '设备未提供' }}</small>
+
               <i v-if="smsUnreadBadge(thread.unreadCount || 0)" aria-label="未读消息">
                 {{ Math.min(smsUnreadBadge(thread.unreadCount || 0), 99) }}
               </i>
@@ -172,7 +173,7 @@ onUnmounted(clearLongPress)
 
 .sms-thread-row {
   position: relative;
-  height: 82px;
+  height: 112px;
   border-bottom: 1px solid var(--ui-border-muted);
   background: transparent;
   transition: background-color 150ms var(--ui-ease-out), box-shadow 150ms var(--ui-ease-out);
@@ -289,8 +290,8 @@ onUnmounted(clearLongPress)
   .sms-thread-toolbar { min-height: 64px; padding: 10px; }
   .sms-new-message { width: 44px; min-width: 44px; height: 44px; padding: 0; }
   .sms-new-message span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .sms-thread-row { height: 82px; }
-  .sms-thread-select { min-height: 82px; padding-inline: 10px; grid-template-columns: 38px minmax(0, 1fr) 58px; }
+  .sms-thread-row { height: 112px; }
+  .sms-thread-select { min-height: 112px; padding-inline: 10px; grid-template-columns: 38px minmax(0, 1fr) 58px; }
   .sms-thread-delete { display: none; }
 }
 
@@ -298,4 +299,5 @@ onUnmounted(clearLongPress)
   .sms-thread-row { transition: background-color 120ms linear; }
   .sms-thread-delete { transition: opacity 120ms linear; transform: translateY(-50%); }
 }
+.sms-thread-copy .sms-thread-identity { color: var(--ui-primary); font-size: 12px; line-height: 1.5; }
 </style>
